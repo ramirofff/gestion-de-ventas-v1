@@ -7,4 +7,5 @@ export interface Product {
   category: string;
   image_url: string;
   created_at: string; // ISO timestamp
+  inactive?: boolean;
 }

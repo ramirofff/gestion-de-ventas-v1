@@ -2,6 +2,9 @@
 
 "use client";
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { Product } from '../types/product';
+import type { Sale, SaleProduct } from '../types/sale';
+import type { Category } from '../types/category';
 import { Boxes, ListOrdered, ShoppingCart, CheckCircle2, BarChart2, PieChart, Zap, HelpCircle } from 'lucide-react';
 
 import { useProductsContext } from '../components/ProductsProvider';
@@ -35,7 +38,7 @@ export default function Home() {
   const [editSuccess, setEditSuccess] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  function openEditProduct(product: any) {
+function openEditProduct(product: Product) {
     setEditProduct(product);
     setEditValues({
       name: product.name,
@@ -47,7 +50,7 @@ export default function Home() {
   }
 
   // Duplicar producto
-  const duplicateProduct = useCallback(async (product: any) => {
+const duplicateProduct = useCallback(async (product: Product) => {
     // Siempre enviar original_price, aunque el producto original no lo tenga
     const originalPrice = typeof product.original_price === 'number' && !isNaN(product.original_price)
       ? product.original_price
@@ -124,17 +127,18 @@ export default function Home() {
 
   // ...hooks y utilidades...
   // Estados principales que se usan en hooks/utilidades
-  const [user, setUser] = useState<any>(null);
+type User = { id: string; email?: string };
+const [user, setUser] = useState<User | null>(null);
   // Cargar usuario autenticado de Supabase al montar y en cambios de sesión
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+      setUser(user ? { id: user.id, email: user.email } : null);
     };
     getUser();
     // Suscribirse a cambios de sesión
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
     });
     return () => {
       listener?.subscription.unsubscribe();
@@ -144,7 +148,7 @@ export default function Home() {
   const [reportes, setReportes] = useState<{ totalVentas: number; cantidadTickets: number; promedio: number } | null>(null);
 
   // Lógica para reportes y ventas
-  const [ventas, setVentas] = useState<any[]>([]);
+const [ventas, setVentas] = useState<Sale[]>([]);
   useEffect(() => {
     if (user) {
       (async () => {
@@ -153,9 +157,18 @@ export default function Home() {
           .select('id, total, products')
           .eq('user_id', user.id);
         if (!error && data) {
-          setVentas(data);
+          setVentas(
+            (data as any[]).map((sale) => ({
+              id: sale.id,
+              user_id: sale.user_id ?? '',
+              products: sale.products ?? [],
+              total: sale.total ?? 0,
+              date: sale.date ?? '',
+              ticket_id: sale.ticket_id
+            }))
+          );
           if (view === 'reports') {
-            const totalVentas = data.reduce((sum: number, sale: any) => sum + (sale.total || 0), 0);
+            const totalVentas = (data as any[]).reduce((sum: number, sale: any) => sum + (sale.total || 0), 0);
             const cantidadTickets = data.length;
             const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
             setReportes({ totalVentas, cantidadTickets, promedio });
@@ -228,11 +241,11 @@ export default function Home() {
   const [discount, setDiscount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState('efectivo');
   const [showAddAnim, setShowAddAnim] = useState(false);
-  const subtotal = cart.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+const subtotal = cart.reduce((sum: number, item: Product & { quantity: number }) => sum + item.price * item.quantity, 0);
   const discountValue = discountType === 'amount' ? discount : Math.round((subtotal * discount) / 100);
   const total = Math.max(0, subtotal - discountValue);
   const [showQR, setShowQR] = useState(false);
-  const [ticket, setTicket] = useState<any>(null);
+const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: string | Date; products: (Product & { quantity: number })[]; total: number } | null>(null);
   const [paying, setPaying] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -336,10 +349,10 @@ export default function Home() {
   if (view === 'stats' && user) {
     // Estadísticas reales: productos más vendidos y ventas por categoría
     // Contar ventas por producto
-    const ventasPorProducto: Record<string, { producto: any, cantidad: number }> = {};
-    ventas.forEach((venta: any) => {
+const ventasPorProducto: Record<string, { producto: SaleProduct, cantidad: number }> = {};
+ventas.forEach((venta: Sale) => {
       if (Array.isArray(venta.products)) {
-        venta.products.forEach((item: any) => {
+        venta.products.forEach((item: SaleProduct) => {
           if (!ventasPorProducto[item.id]) ventasPorProducto[item.id] = { producto: item, cantidad: 0 };
           ventasPorProducto[item.id].cantidad += item.quantity || 1;
         });
@@ -355,7 +368,7 @@ export default function Home() {
       let catName = 'Sin categoría';
       if (producto.category) {
         // Buscar nombre en categories
-        const catObj = categories.find((c: any) => c.id === producto.category || c.name === producto.category);
+const catObj = categories.find((c: Category) => c.id === producto.category || c.name === producto.category);
         catName = catObj?.name || producto.category;
       }
       ventasPorCategoria[catName] = (ventasPorCategoria[catName] || 0) + cantidad;
@@ -424,7 +437,7 @@ export default function Home() {
   }
   if (view === 'shortcuts' && user) {
     // Atajos rápidos: aplicar descuentos y favoritos reales
-    const favoritos = products.filter((p: any) => favoriteIds.includes(p.id));
+const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
     return (
       <main className={`min-h-screen ${bgMain} p-8 flex flex-col items-center`}>
         <Zap className="w-16 h-16 text-orange-400 animate-bounce mb-4" />
@@ -447,7 +460,7 @@ export default function Home() {
               {favoritos.length === 0 ? (
                 <li className="text-zinc-400">No tienes productos favoritos.</li>
               ) : (
-                favoritos.map((prod: any) => (
+favoritos.map((prod: Product) => (
                   <li key={prod.id} className="flex justify-between items-center">
                     <span className="font-semibold text-zinc-700 dark:text-zinc-200">{prod.name}</span>
                     <button onClick={() => addToCart(prod)} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-bold">Agregar</button>
@@ -573,12 +586,12 @@ export default function Home() {
                 <div className={`col-span-full text-center ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>No hay productos disponibles.</div>
               ) : (
                 <>
-                  {products
-                    .filter((product: any) =>
+                  {(() => {
+                    const filteredProducts = products.filter((product: Product) =>
                       (!selectedCategory || product.category === selectedCategory) &&
                       (!searchTerm || product.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                    )
-                    .map((product: any) => (
+                    );
+                    return filteredProducts.map((product: Product) => (
                       <div key={product.id} className={`relative group transition-all duration-200 ${product.inactive ? 'opacity-50 pointer-events-none' : ''}`} role="listitem">
                         <ProductCard product={product} onAdd={() => {
                           addToCart(product);
@@ -622,7 +635,8 @@ export default function Home() {
                           role="button"
                         >★</button>
                       </div>
-                    ))}
+                    ));
+                  })()}
                   {editProduct && (
                     <EditProductModal
                       product={editProduct}
@@ -793,7 +807,7 @@ export default function Home() {
             <h2 className="text-xl font-bold mb-2 text-center">Ticket #{ticket.ticket_id || ticket.id}</h2>
             <div className="mb-2 text-center text-zinc-500 text-sm">{new Date(ticket.date).toLocaleString('es-ES')}</div>
             <div className="mb-4">
-              {ticket.products.map((item: any) => (
+{ticket.products.map((item: Product & { quantity: number }) => (
                 <div key={item.id} className="flex justify-between">
                   <span>{item.name} x{item.quantity}</span>
                   <span>${(item.price * item.quantity).toFixed(2)}</span>
