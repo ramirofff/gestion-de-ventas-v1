@@ -257,7 +257,7 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
   const textMain = getThemeClass({ dark: 'text-white', light: 'text-zinc-900' });
   const cardBg = getThemeClass({ dark: 'bg-zinc-900 border-zinc-800', light: 'bg-white border-zinc-200' });
   const cardShadow = getThemeClass({ dark: 'shadow-2xl', light: 'shadow-lg' });
-  const btnBase = 'rounded-xl px-6 py-4 flex items-center gap-3 font-bold shadow transition-colors border duration-200';
+  const btnBase = 'rounded-xl px-4 py-3 text-base sm:px-6 sm:py-4 sm:text-lg flex items-center gap-3 font-bold shadow transition-colors border duration-200';
   const btnAdmin = getThemeClass({ dark: 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-white', light: 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-900' });
   const btnSales = getThemeClass({ dark: 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-white', light: 'bg-blue-100 hover:bg-blue-200 border-blue-200 text-blue-900' });
   const btnTheme = getThemeClass({ dark: 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-white', light: 'bg-yellow-100 hover:bg-yellow-200 border-yellow-200 text-yellow-900' });
@@ -295,14 +295,14 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
   // Secciones protegidas: solo si hay usuario
   if (view === 'admin' && user) {
     return (
-      <main className={`min-h-screen ${bgMain} p-8`}>
-        <div className="flex items-center justify-between mb-8">
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+        <div className="flex flex-col sm:flex-row items-center justify-between mb-4 sm:mb-8 gap-2 sm:gap-0">
           <h1 className={`text-3xl font-bold text-yellow-400 flex items-center gap-3`}>
             <Boxes className="w-8 h-8 text-green-400" /> Administrar productos
           </h1>
           <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
         </div>
-        <div className={`mt-8 ${cardBg} ${cardShadow} rounded-2xl p-8 border`}>
+        <div className={`mt-4 sm:mt-8 ${cardBg} ${cardShadow} rounded-2xl p-2 sm:p-8 border`}>
           <AdminPanel />
         </div>
       </main>
@@ -310,14 +310,14 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
   }
   if (view === 'sales' && user) {
     return (
-      <main className={`min-h-screen ${bgMain} p-8`}>
-        <div className="flex items-center justify-between mb-8">
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+        <div className="flex flex-col sm:flex-row items-center justify-between mb-4 sm:mb-8 gap-2 sm:gap-0">
           <h1 className={`text-3xl font-bold text-blue-400 flex items-center gap-3`}>
             <ListOrdered className="w-8 h-8 text-blue-400" /> Historial de ventas
           </h1>
           <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
         </div>
-        <div className={`mt-8`}>
+        <div className={`mt-4 sm:mt-8`}>
           <SalesHistory userId={user?.id} getThemeClass={getThemeClass} />
         </div>
       </main>
@@ -325,11 +325,11 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
   }
   if (view === 'reports' && user) {
     return (
-      <main className={`min-h-screen ${bgMain} p-8 flex flex-col items-center justify-center`}>
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center justify-center`}>
         <BarChart2 className="w-16 h-16 text-purple-400 animate-pulse mb-4" />
         <h1 className="text-3xl font-bold text-purple-500 mb-2">Reportes</h1>
         <p className="text-lg text-purple-300 mb-8">Visualiza reportes de ventas, ingresos y más.</p>
-        <div className={`w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-purple-200 dark:border-purple-800 p-8 mb-8 flex flex-col gap-6`}>
+        <div className={`w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-purple-200 dark:border-purple-800 p-2 sm:p-8 mb-8 flex flex-col gap-6`}>
           <div className="flex justify-between items-center">
             <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ventas totales</span>
             <span className="text-2xl font-bold text-purple-500">{reportes ? formatCurrency(reportes.totalVentas) : '...'}</span>
@@ -377,12 +377,12 @@ const catObj = categories.find((c: Category) => c.id === producto.category || c.
     // Preparar datos para el gráfico de barras
     const maxVentasCat = Math.max(...Object.values(ventasPorCategoria), 1);
     return (
-      <main className={`min-h-screen ${bgMain} p-8 flex flex-col items-center`}>
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center`}>
         <PieChart className="w-16 h-16 text-pink-400 animate-spin-slow mb-4" />
         <h1 className="text-3xl font-bold text-pink-500 mb-2">Estadísticas</h1>
         <p className="text-lg text-pink-300 mb-8">Gráficos y métricas de tu negocio.</p>
-        <div className="w-full max-w-2xl grid md:grid-cols-2 gap-8 mb-8">
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-pink-200 dark:border-pink-800 p-6`}>
+        <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 mb-8">
+          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-pink-200 dark:border-pink-800 p-2 sm:p-6`}>
             <h2 className="text-xl font-bold text-pink-500 mb-4">Top productos vendidos</h2>
             {topProducts.length === 0 ? (
               <div className="text-zinc-400">No hay ventas registradas.</div>
@@ -397,7 +397,7 @@ const catObj = categories.find((c: Category) => c.id === producto.category || c.
               </ul>
             )}
           </div>
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-pink-200 dark:border-pink-800 p-6`}>
+          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-pink-200 dark:border-pink-800 p-2 sm:p-6`}>
             <h2 className="text-xl font-bold text-pink-500 mb-4">Ventas por categoría</h2>
             {Object.keys(ventasPorCategoria).length === 0 ? (
               <div className="text-zinc-400">No hay ventas registradas.</div>
@@ -440,12 +440,12 @@ const catObj = categories.find((c: Category) => c.id === producto.category || c.
     // Atajos rápidos: aplicar descuentos y favoritos reales
 const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
     return (
-      <main className={`min-h-screen ${bgMain} p-8 flex flex-col items-center`}>
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center`}>
         <Zap className="w-16 h-16 text-orange-400 animate-bounce mb-4" />
         <h1 className="text-3xl font-bold text-orange-500 mb-2">Atajos rápidos</h1>
         <p className="text-lg text-orange-300 mb-8">Accede a descuentos y productos destacados.</p>
-        <div className="w-full max-w-xl grid md:grid-cols-2 gap-8 mb-8">
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-orange-200 dark:border-orange-800 p-6`}>
+        <div className="w-full max-w-xl grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 mb-8">
+          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-orange-200 dark:border-orange-800 p-2 sm:p-6`}>
             <h2 className="text-lg font-bold text-orange-500 mb-2">Descuentos rápidos</h2>
             <div className="flex flex-wrap gap-2">
               {[5, 10, 20, 50].map(val => (
@@ -455,7 +455,7 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
               ))}
             </div>
           </div>
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-orange-200 dark:border-orange-800 p-6`}>
+          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-orange-200 dark:border-orange-800 p-2 sm:p-6`}>
             <h2 className="text-lg font-bold text-orange-500 mb-2">Favoritos</h2>
             <ul className="space-y-2">
               {favoritos.length === 0 ? (
@@ -478,11 +478,11 @@ favoritos.map((prod: Product) => (
   if (view === 'help' && user) {
     // Ejemplo de soporte/ayuda: preguntas frecuentes y contacto
     return (
-      <main className={`min-h-screen ${bgMain} p-8 flex flex-col items-center`}>
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center`}>
         <HelpCircle className="w-16 h-16 text-blue-400 animate-pulse mb-4" />
         <h1 className="text-3xl font-bold text-blue-500 mb-2">Soporte / Ayuda</h1>
         <p className="text-lg text-blue-300 mb-8">Preguntas frecuentes y contacto técnico.</p>
-        <div className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-blue-200 dark:border-blue-800 p-8 mb-8">
+        <div className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-blue-200 dark:border-blue-800 p-2 sm:p-8 mb-8">
           <h2 className="text-lg font-bold text-blue-500 mb-4">Preguntas frecuentes</h2>
           <ul className="space-y-3">
             <li>
@@ -516,8 +516,8 @@ favoritos.map((prod: Product) => (
   return (
     <>
       <title>Gestion de ventas V1</title>
-      <main className={`min-h-screen ${bgMain} p-8`}>
-        <div className="flex items-center justify-between mb-8">
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+      <div className="flex flex-col sm:flex-row items-center justify-between mb-4 sm:mb-8 gap-2 sm:gap-0">
           <h1 className="text-3xl font-bold text-yellow-400 text-center">
             {editingName ? (
               <input
@@ -570,7 +570,7 @@ favoritos.map((prod: Product) => (
             </button>
           </div>
         )}
-      <div className="flex flex-col lg:flex-row gap-8 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 sm:gap-8 items-start">
         <div className="flex-1">
           <>
             <h2 className={`text-2xl font-bold mb-6 ${textMain}`}>Menú de productos</h2>
@@ -580,7 +580,7 @@ favoritos.map((prod: Product) => (
               selected={selectedCategory}
               onSelect={setSelectedCategory}
             />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6" role="list">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6" role="list">
               {loading ? (
                 <div className={`col-span-full text-center ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>Cargando productos...</div>
               ) : products.length === 0 ? (
@@ -666,7 +666,7 @@ favoritos.map((prod: Product) => (
         {/* Carrito fijo a la derecha en desktop */}
         {cart.length > 0 && (
           <div className="w-full lg:w-[24rem] lg:sticky lg:top-24 flex-shrink-0">
-            <div className={`${cardBg} ${cardShadow} p-6 border rounded-2xl animate-fade-in transition-colors duration-200`}>
+            <div className={`${cardBg} ${cardShadow} p-2 sm:p-6 border rounded-2xl animate-fade-in transition-colors duration-200`}>
               <h2 className={`text-xl font-bold mb-4 ${textMain}`}>Carrito</h2>
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {cart.map((item) => (
