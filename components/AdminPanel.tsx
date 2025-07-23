@@ -1,7 +1,6 @@
 "use client";
 import type { Product } from '../types/product';
 import type { Category } from '../types/category';
-import type { Sale } from '../types/sale';
 import { useState, useEffect } from 'react';
 import { Boxes } from 'lucide-react';
 import { useProductsContext } from '../components/ProductsProvider';
@@ -9,57 +8,61 @@ import { AddProductForm } from '../components/AddProductForm';
 import { CategoryFilter } from '../components/CategoryFilter';
 import { supabase } from '../lib/supabaseClient';
 
-interface Props {
-  userId: string;
-  getThemeClass: (opts: { dark: string; light: string }) => string;
-}
-
-export function AdminPanel({ userId, getThemeClass }: Props) {
-  const { products, setProducts, fetchProducts } = useProductsContext();
+export function AdminPanel() {
+  const { products, fetchProducts } = useProductsContext();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Record<string, unknown>>({});
+  const [editData, setEditData] = useState<any>({});
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [loadingSales, setLoadingSales] = useState(false);
+  const [page, setPage] = useState(1);
 
-  // Fetch categories
+  // Simple theme helper
+  function getThemeClass(classes: { dark: string; light: string }) {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return classes.dark;
+    }
+    return classes.light;
+  }
+
   useEffect(() => {
-    supabase.from('categories').select('*').order('name').then((res) => setCategories(res.data || []));
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    supabase.from('categories').select('*').order('name').then(({ data }) => setCategories(data || []));
   }, []);
 
-  // Fetch sales
-  useEffect(() => {
-    setLoadingSales(true);
-    supabase.from('sales').select('*').eq('user_id', userId).order('created_at', { ascending: false }).then((res) => {
-      setSales(res.data || []);
-      setLoadingSales(false);
-    });
-  }, [userId]);
+  // Pagination
+  const pageSize = 10;
+  const filteredProducts = products.filter(
+    (p: Product) => p.user_id === userId && (!selectedCategory || p.category === selectedCategory)
+  );
+  const totalPages = Math.ceil(filteredProducts.length / pageSize);
+  const paginatedProducts = filteredProducts.slice((page - 1) * pageSize, page * pageSize);
 
-  // Inline edit handlers
+  // Handlers
   const startEdit = (product: Product) => {
     setEditingId(product.id);
-    setEditData({ ...product });
+    setEditData({
+      name: product.name,
+      price: product.price,
+      original_price: product.original_price,
+      category: product.category,
+    });
   };
   const cancelEdit = () => {
     setEditingId(null);
     setEditData({});
   };
   const saveEdit = async () => {
+    if (!editingId) return;
     setLoading(true);
-    setError(null);
-    const { id, name, price, original_price, category, image_url } = editData;
-    const { error } = await supabase.from('products').update({ name, price, original_price, category, image_url }).eq('id', id);
-    if (error) setError(error.message);
-    else {
-      await fetchProducts();
-      setEditingId(null);
-      setEditData({});
-    }
+    const { name, price, original_price, category } = editData;
+    await supabase.from('products').update({ name, price: Number(price), original_price: Number(original_price), category }).eq('id', editingId);
+    await fetchProducts();
+    setEditingId(null);
+    setEditData({});
     setLoading(false);
   };
   const deleteProduct = async (id: string) => {
@@ -80,8 +83,6 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
     }
     setLoading(false);
   };
-
-  // Category management
   const addCategory = async () => {
     const name = prompt('Nombre de la nueva categoría:');
     if (!name) return;
@@ -97,11 +98,6 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
     const { data } = await supabase.from('categories').select('*').order('name');
     setCategories(data || []);
   };
-
-  // Filtered products (by user and category)
-  const filteredProducts = products.filter(
-    (p: Product) => p.user_id === userId && (!selectedCategory || p.category === selectedCategory)
-  );
 
   return (
     <div>
@@ -132,7 +128,7 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
             </tr>
           </thead>
           <tbody>
-            {filteredProducts.map((product: Product) => (
+            {paginatedProducts.map((product: Product) => (
               <tr key={product.id} className={getThemeClass({dark:'border-b border-zinc-700',light:'border-b border-yellow-200'})}>
                 <td className="p-2"><img src={product.image_url} alt={product.name} className="w-14 h-14 object-cover rounded" /></td>
                 <td className="p-2">
@@ -180,14 +176,20 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
         </table>
       </div>
       {error && <div className="text-red-500 mt-2">{error}</div>}
+      {/* Paginación */}
+      {totalPages > 1 && (
+        <div className="flex justify-center gap-2 mt-4">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold disabled:opacity-50">Anterior</button>
+          <span className="px-2 py-1">Página {page} de {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold disabled:opacity-50">Siguiente</button>
+        </div>
+      )}
       {/* Category delete buttons */}
       <div className="mt-4 flex gap-2 flex-wrap">
         {categories.map((cat: Category) => (
           <button key={cat.id} onClick={() => deleteCategory(cat.id)} className="bg-red-700 hover:bg-red-800 text-white px-3 py-1 rounded text-sm">Eliminar {cat.name}</button>
         ))}
       </div>
-
-      {/* Sales History removed for admin panel */}
     </div>
   );
 }

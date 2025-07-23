@@ -7,6 +7,7 @@ interface EditProductModalProps {
   onChange: (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLSelectElement>) => void;
   onClose: () => void;
   onSave: () => void;
+  onDelete: () => void;
   loading: boolean;
   error: string;
   success: boolean;
@@ -14,11 +15,12 @@ interface EditProductModalProps {
 }
 
 const EditProductModal: React.FC<EditProductModalProps> = ({
-  product,
+      // product,
   values,
   onChange,
   onClose,
   onSave,
+  onDelete,
   loading,
   error,
   success,
@@ -101,6 +103,14 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
               {loading && <span className="loader border-2 border-blue-200 border-t-blue-500 rounded-full w-5 h-5 mr-2 animate-spin"></span>}
               {loading ? 'Guardando...' : 'Guardar'}
             </button>
+            <button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg flex-1 transition-colors"
+              onClick={onDelete}
+              disabled={loading}
+              role="button"
+              aria-label="Eliminar"
+            >Eliminar</button>
           </div>
         </form>
       </div>

@@ -15,7 +15,7 @@ const ProductsContext = createContext<ProductsContextType | null>(null);
 export function ProductsProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Removed unused error state variable
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -23,8 +23,7 @@ export function ProductsProvider({ children }: { children: React.ReactNode }) {
       .from('products')
       .select('*')
       .order('created_at', { ascending: false });
-    if (error) setError(error.message);
-    else setProducts(data || []);
+    if (!error) setProducts(data || []);
     setLoading(false);
   };
 

@@ -303,7 +303,7 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
           <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
         </div>
         <div className={`mt-8 ${cardBg} ${cardShadow} rounded-2xl p-8 border`}>
-          <AdminPanel userId={user?.id} getThemeClass={getThemeClass} />
+          <AdminPanel />
         </div>
       </main>
     );
@@ -645,6 +645,13 @@ favoritos.map((prod: Product) => (
                       onChange={handleEditChange}
                       onClose={() => setEditProduct(null)}
                       onSave={handleEditSave}
+                      onDelete={async () => {
+                        if (!editProduct) return;
+                        if (!window.confirm('¿Eliminar este producto?')) return;
+                        await supabase.from('products').delete().eq('id', editProduct.id);
+                        setEditProduct(null);
+                        if (typeof window !== 'undefined') window.location.reload();
+                      }}
                       loading={editLoading}
                       error={editError}
                       success={editSuccess}
