@@ -1,7 +1,7 @@
+"use client";
 import type { Product } from '../types/product';
 import type { Category } from '../types/category';
 import type { Sale } from '../types/sale';
-"use client";
 import { useState, useEffect } from 'react';
 import { Boxes } from 'lucide-react';
 import { useProductsContext } from '../components/ProductsProvider';

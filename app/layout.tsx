@@ -12,9 +12,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+
 export const metadata: Metadata = {
-  title: "FastFood POS",
-  description: "Sistema de punto de venta profesional para autoservicio de comida rápida.",
+  title: "Gestión de ventas V1",
+  description: "Sistema de gestión de ventas para tu negocio.",
   icons: {
     icon: "/favicon.ico",
   },

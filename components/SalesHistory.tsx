@@ -1,5 +1,5 @@
-import type { Sale, SaleProduct } from '../types/sale';
 "use client";
+import type { Sale, SaleProduct } from '../types/sale';
 import { useEffect, useState } from 'react';
 import { ListOrdered } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';

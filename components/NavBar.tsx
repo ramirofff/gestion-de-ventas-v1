@@ -13,7 +13,7 @@ export function NavBar() {
     <nav className="w-full flex items-center justify-between px-6 py-4 bg-zinc-900 border-b border-zinc-800 shadow-lg">
       <div className="flex items-center gap-3">
         <ShoppingCart className="w-7 h-7 text-yellow-400" />
-        <span className="text-xl font-bold text-yellow-400">FastFood POS</span>
+        <span className="text-xl font-bold text-yellow-400">Gestion de ventas v1</span>
       </div>
       <div className="flex gap-4 items-center">
         <Link href="/" className="flex items-center gap-2 text-white hover:text-yellow-400 font-medium transition-colors">

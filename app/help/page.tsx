@@ -1,3 +1,6 @@
+export const metadata = {
+  title: "Gestión de ventas V1"
+};
 {/* Modal de ayuda o instrucciones de uso */}
 export default function HelpPage() {
   return (
