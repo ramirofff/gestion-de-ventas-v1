@@ -157,8 +157,9 @@ const [ventas, setVentas] = useState<Sale[]>([]);
           .select('id, total, products')
           .eq('user_id', user.id);
         if (!error && data) {
+          type DBVenta = { id: string; user_id?: string; products?: SaleProduct[]; total?: number; date?: string; ticket_id?: string };
           setVentas(
-            (data as any[]).map((sale) => ({
+            (data as DBVenta[]).map((sale) => ({
               id: sale.id,
               user_id: sale.user_id ?? '',
               products: sale.products ?? [],
@@ -168,7 +169,7 @@ const [ventas, setVentas] = useState<Sale[]>([]);
             }))
           );
           if (view === 'reports') {
-            const totalVentas = (data as any[]).reduce((sum: number, sale: any) => sum + (sale.total || 0), 0);
+            const totalVentas = (data as DBVenta[]).reduce((sum: number, sale) => sum + (sale.total || 0), 0);
             const cantidadTickets = data.length;
             const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
             setReportes({ totalVentas, cantidadTickets, promedio });
@@ -486,7 +487,7 @@ favoritos.map((prod: Product) => (
           <ul className="space-y-3">
             <li>
               <span className="font-semibold">¿Cómo agrego productos al carrito?</span><br />
-              Haz clic en el botón "Agregar" en la tarjeta del producto.
+              Haz clic en el botón &quot;Agregar&quot; en la tarjeta del producto.
             </li>
             <li>
               <span className="font-semibold">¿Cómo aplico un descuento?</span><br />
@@ -494,7 +495,7 @@ favoritos.map((prod: Product) => (
             </li>
             <li>
               <span className="font-semibold">¿Cómo imprimo un ticket?</span><br />
-              Después de pagar, haz clic en "Imprimir ticket" en la ventana del ticket.
+              Después de pagar, haz clic en &quot;Imprimir ticket&quot; en la ventana del ticket.
             </li>
             <li>
               <span className="font-semibold">¿Cómo cambio el modo claro/oscuro?</span><br />
