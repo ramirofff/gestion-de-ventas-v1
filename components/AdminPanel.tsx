@@ -12,7 +12,18 @@ export function AdminPanel() {
   const { products, fetchProducts } = useProductsContext();
   const [categories, setCategories] = useState<Category[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<any>({});
+  const [editData, setEditData] = useState<{
+  name: string;
+  price: number | string;
+  original_price: number | string;
+  category: string;
+}>({
+  name: '',
+  price: '',
+  original_price: '',
+  category: '',
+});
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [userId, setUserId] = useState<string | null>(null);
@@ -53,7 +64,12 @@ export function AdminPanel() {
   };
   const cancelEdit = () => {
     setEditingId(null);
-    setEditData({});
+setEditData({
+  name: '',
+  price: '',
+  original_price: '',
+  category: '',
+});
   };
   const saveEdit = async () => {
     if (!editingId) return;
@@ -62,7 +78,12 @@ export function AdminPanel() {
     await supabase.from('products').update({ name, price: Number(price), original_price: Number(original_price), category }).eq('id', editingId);
     await fetchProducts();
     setEditingId(null);
-    setEditData({});
+setEditData({
+  name: '',
+  price: '',
+  original_price: '',
+  category: '',
+});
     setLoading(false);
   };
   const deleteProduct = async (id: string) => {
