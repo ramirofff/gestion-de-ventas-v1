@@ -49,8 +49,14 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
           return;
         }
         image_url = url;
-      } catch (err: any) {
-        setError('Error al subir la imagen: ' + (err?.message || String(err)));
+      } catch (err: unknown) {
+        let msg = 'Error al subir la imagen: ';
+        if (err && typeof err === 'object' && 'message' in err) {
+          msg += (err as { message: string }).message;
+        } else {
+          msg += String(err);
+        }
+        setError(msg);
         setUploading(false);
         return;
       }
@@ -68,7 +74,7 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
       setOriginalPrice('');
       setCategory(categories[0]?.id || '');
       setImage(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError('Error al guardar el producto.');
     }
     setUploading(false);

@@ -1,3 +1,6 @@
+import type { Product } from '../types/product';
+import type { Category } from '../types/category';
+import type { Sale } from '../types/sale';
 "use client";
 import { useState, useEffect } from 'react';
 import { Boxes } from 'lucide-react';
@@ -13,14 +16,14 @@ interface Props {
 
 export function AdminPanel({ userId, getThemeClass }: Props) {
   const { products, setProducts, fetchProducts } = useProductsContext();
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<any>({});
+  const [editData, setEditData] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sales, setSales] = useState<any[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
 
   // Fetch categories
@@ -38,7 +41,7 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
   }, [userId]);
 
   // Inline edit handlers
-  const startEdit = (product: any) => {
+  const startEdit = (product: Product) => {
     setEditingId(product.id);
     setEditData({ ...product });
   };
@@ -66,7 +69,7 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
     await fetchProducts();
     setLoading(false);
   };
-  const handleAddProduct = async (data: any) => {
+  const handleAddProduct = async (data: { name: string; price: number; original_price: number; category: string; image_url: string; }) => {
     setLoading(true);
     setError(null);
     const { error } = await supabase.from('products').insert([{ ...data, user_id: userId }]);
@@ -97,7 +100,7 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
 
   // Filtered products (by user and category)
   const filteredProducts = products.filter(
-    (p: any) => p.user_id === userId && (!selectedCategory || p.category === selectedCategory)
+    (p: Product) => p.user_id === userId && (!selectedCategory || p.category === selectedCategory)
   );
 
   return (
@@ -129,33 +132,33 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
             </tr>
           </thead>
           <tbody>
-            {filteredProducts.map((product: any) => (
+            {filteredProducts.map((product: Product) => (
               <tr key={product.id} className={getThemeClass({dark:'border-b border-zinc-700',light:'border-b border-yellow-200'})}>
                 <td className="p-2"><img src={product.image_url} alt={product.name} className="w-14 h-14 object-cover rounded" /></td>
                 <td className="p-2">
                   {editingId === product.id ? (
-                    <input value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"} />
+                    <input value={typeof editData.name === 'string' ? editData.name : ''} onChange={e => setEditData({ ...editData, name: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"} />
                   ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{product.name}</span>}
                 </td>
                 <td className="p-2">
                   {editingId === product.id ? (
-                    <input type="number" value={editData.price} onChange={e => setEditData({ ...editData, price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
+                    <input type="number" value={typeof editData.price === 'string' || typeof editData.price === 'number' ? editData.price : ''} onChange={e => setEditData({ ...editData, price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
                   ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{`$${product.price}`}</span>}
                 </td>
                 <td className="p-2">
                   {editingId === product.id ? (
-                    <input type="number" value={editData.original_price} onChange={e => setEditData({ ...editData, original_price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
+                    <input type="number" value={typeof editData.original_price === 'string' || typeof editData.original_price === 'number' ? editData.original_price : ''} onChange={e => setEditData({ ...editData, original_price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
                   ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{`$${product.original_price}`}</span>}
                 </td>
                 <td className="p-2">
                   {editingId === product.id ? (
-                    <select value={editData.category} onChange={e => setEditData({ ...editData, category: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"}>
-                      {categories.map((cat: any) => (
+                    <select value={typeof editData.category === 'string' ? editData.category : ''} onChange={e => setEditData({ ...editData, category: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"}>
+                      {categories.map((cat: Category) => (
                         <option key={cat.id} value={cat.id}>{cat.name}</option>
                       ))}
                     </select>
                   ) : (
-                    <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{categories.find((cat: any) => cat.id === product.category)?.name || '-'}</span>
+                    <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{categories.find((cat: Category) => cat.id === product.category)?.name || '-'}</span>
                   )}
                 </td>
                 <td className="p-2 flex gap-2">
@@ -179,7 +182,7 @@ export function AdminPanel({ userId, getThemeClass }: Props) {
       {error && <div className="text-red-500 mt-2">{error}</div>}
       {/* Category delete buttons */}
       <div className="mt-4 flex gap-2 flex-wrap">
-        {categories.map((cat: any) => (
+        {categories.map((cat: Category) => (
           <button key={cat.id} onClick={() => deleteCategory(cat.id)} className="bg-red-700 hover:bg-red-800 text-white px-3 py-1 rounded text-sm">Eliminar {cat.name}</button>
         ))}
       </div>

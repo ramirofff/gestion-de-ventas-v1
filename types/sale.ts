@@ -11,4 +11,5 @@ export interface Sale {
   total: number;
   date: string; // ISO string
   ticket_id?: string;
+  created_at?: string;
 }

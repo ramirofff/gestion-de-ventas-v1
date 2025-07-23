@@ -1,3 +1,4 @@
+import type { Sale, SaleProduct } from '../types/sale';
 "use client";
 import { useEffect, useState } from 'react';
 import { ListOrdered } from 'lucide-react';
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export function SalesHistory({ userId, getThemeClass, limit }: Props) {
-  const [sales, setSales] = useState<any[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(false);
   const [todayTotal, setTodayTotal] = useState(0);
   const [monthTotal, setMonthTotal] = useState(0);
@@ -19,7 +20,7 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
     d.setHours(0,0,0,0);
     return d.toISOString().slice(0,10);
   });
-  const [showTicket, setShowTicket] = useState<any>(null);
+  const [showTicket, setShowTicket] = useState<Sale | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -49,7 +50,7 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
 
   // Filtrar ventas por fecha seleccionada
   let filteredSales = sales.filter(sale => {
-    const d = new Date(sale.created_at);
+    const d = sale.created_at ? new Date(sale.created_at) : new Date();
     return d.toISOString().slice(0,10) === selectedDate;
   });
   if (limit && filteredSales.length > limit) {
@@ -87,13 +88,13 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
               </tr>
             </thead>
             <tbody>
-              {filteredSales.map((sale: any) => (
+              {filteredSales.map((sale: Sale) => (
                 <tr key={sale.id} className={getThemeClass({dark:'border-b border-zinc-700 hover:bg-zinc-700/30',light:'border-b border-yellow-200 hover:bg-yellow-200/40'}) + " cursor-pointer transition-colors"}>
-                  <td className={getThemeClass({dark:'p-2 text-white',light:'p-2 text-zinc-900'})}>{new Date(sale.created_at).toLocaleString('es-ES')}</td>
+              <td className={getThemeClass({dark:'p-2 text-white',light:'p-2 text-zinc-900'})}>{sale.created_at ? new Date(sale.created_at).toLocaleString('es-ES') : ''}</td>
                   <td className="p-2 font-bold text-yellow-400">${sale.total?.toFixed(2)}</td>
                   <td className={getThemeClass({dark:'p-2 text-white',light:'p-2 text-zinc-900'})}>
                     <ul className={getThemeClass({dark:'list-disc pl-4 text-white',light:'list-disc pl-4 text-zinc-900'})}>
-                      {sale.products?.map((item: any) => (
+                      {sale.products?.map((item: SaleProduct) => (
                         <li key={item.id}>{item.name} x{item.quantity}</li>
                       ))}
                     </ul>
@@ -114,10 +115,10 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
         <div className={getThemeClass({dark:'bg-black/70',light:'bg-black/30'}) + " fixed inset-0 z-50 flex items-center justify-center transition-colors"}>
           <div className={getThemeClass({dark:'bg-white text-zinc-900',light:'bg-yellow-50 text-yellow-900'}) + " rounded-lg p-8 w-96 mx-auto shadow-2xl relative transition-colors border " + getThemeClass({dark:'border-zinc-200',light:'border-yellow-200'})}>
             <button className="absolute top-3 right-3 text-zinc-400 hover:text-black" onClick={() => setShowTicket(null)}>×</button>
-            <h2 className="text-xl font-bold mb-2 text-center">Ticket #{showTicket.ticket_id || showTicket.id}</h2>
-            <div className="mb-2 text-center text-zinc-500 text-sm">{new Date(showTicket.created_at).toLocaleString('es-ES')}</div>
+            <h2 className="text-xl font-bold mb-2 text-center">Ticket #{showTicket?.ticket_id || showTicket?.id}</h2>
+            <div className="mb-2 text-center text-zinc-500 text-sm">{showTicket?.created_at ? new Date(showTicket.created_at).toLocaleString('es-ES') : ''}</div>
             <div className="mb-4">
-              {showTicket.products.map((item: any) => (
+              {showTicket?.products?.map((item: SaleProduct) => (
                 <div key={item.id} className="flex justify-between">
                   <span>{item.name} x{item.quantity}</span>
                   <span>${(item.price * item.quantity).toFixed(2)}</span>
@@ -126,7 +127,7 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
             </div>
             <div className="flex justify-between font-bold text-lg border-t pt-2">
               <span>Total</span>
-              <span>${showTicket.total.toFixed(2)}</span>
+              <span>${showTicket?.total?.toFixed(2)}</span>
             </div>
           </div>
         </div>

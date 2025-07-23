@@ -1,3 +1,4 @@
+import type { Category } from '../types/category';
 import React from "react";
 
 interface EditProductModalProps {
@@ -9,7 +10,7 @@ interface EditProductModalProps {
   loading: boolean;
   error: string;
   success: boolean;
-  categories: any[];
+  categories: Category[];
 }
 
 const EditProductModal: React.FC<EditProductModalProps> = ({
@@ -74,7 +75,7 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
               className="w-full rounded-lg border-2 border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-zinc-800 text-blue-900 dark:text-blue-200 px-3 py-2 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
               <option value="">Sin categoría</option>
-              {categories.map((cat: any) => (
+              {categories.map((cat: Category) => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>

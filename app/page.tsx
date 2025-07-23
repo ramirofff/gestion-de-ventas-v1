@@ -810,13 +810,13 @@ favoritos.map((prod: Product) => (
 {ticket.products.map((item: Product & { quantity: number }) => (
                 <div key={item.id} className="flex justify-between">
                   <span>{item.name} x{item.quantity}</span>
-                  <span>${(item.price * item.quantity).toFixed(2)}</span>
+                  <span>&quot;${(item.price * item.quantity).toFixed(2)}&quot;</span>
                 </div>
               ))}
             </div>
             <div className="flex justify-between font-bold text-lg border-t pt-2">
               <span>Total</span>
-              <span>${ticket.total.toFixed(2)}</span>
+              <span>&quot;${ticket.total.toFixed(2)}&quot;</span>
             </div>
             <div className="mt-6 flex justify-center print:hidden">
               <button

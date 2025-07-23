@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 export function NavBar() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<unknown>(null);
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
@@ -22,7 +22,7 @@ export function NavBar() {
       </div>
       <div className="flex items-center gap-2">
         <User2 className="w-6 h-6 text-zinc-400" />
-        <span className="text-zinc-300 text-sm">{user?.email || 'Invitado'}</span>
+        <span className="text-zinc-300 text-sm">{typeof user === 'object' && user && 'email' in user && typeof user.email === 'string' ? user.email : 'Invitado'}</span>
       </div>
     </nav>
   );

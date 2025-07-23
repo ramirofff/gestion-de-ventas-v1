@@ -1,0 +1,22 @@
+{
+  "name": "Gestion de Ventas V1",
+  "short_name": "VentasV1",
+  "description": "Sistema de gestión de ventas para fastfood",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffbe6",
+  "theme_color": "#facc15",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
