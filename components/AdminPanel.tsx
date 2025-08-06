@@ -7,28 +7,28 @@ import { useProductsContext } from '../components/ProductsProvider';
 import { AddProductForm } from '../components/AddProductForm';
 import { CategoryFilter } from '../components/CategoryFilter';
 import { supabase } from '../lib/supabaseClient';
+import { useCategories } from '../hooks/useCategories';
 
 export function AdminPanel() {
   const { products, fetchProducts } = useProductsContext();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<{
-  name: string;
-  price: number | string;
-  original_price: number | string;
-  category: string;
-}>({
-  name: '',
-  price: '',
-  original_price: '',
-  category: '',
-});
-
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [userId, setUserId] = useState<string | null>(null);
+  const { categories, fetchCategories } = useCategories();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editData, setEditData] = useState<{
+    name: string;
+    price: number | string;
+    original_price: number | string;
+    category: string;
+  }>({
+    name: '',
+    price: '',
+    original_price: '',
+    category: '',
+  });
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [page, setPage] = useState(1);
 
   // Simple theme helper
@@ -39,10 +39,37 @@ export function AdminPanel() {
     return classes.light;
   }
 
+  // Obtener userId al montar el componente
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
-    supabase.from('categories').select('*').order('name').then(({ data }) => setCategories(data || []));
   }, []);
+  
+  // Escuchar eventos del formulario
+  useEffect(() => {
+    const handleProductAdded = () => {
+      setShowAddForm(false);
+    };
+    
+    const handleCategoryAdded = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('Evento categoryAdded recibido con datos:', customEvent.detail);
+      // Actualizar categorías cuando se añade una nueva
+      await fetchCategories();
+      
+      // Verificar si hay datos en el evento
+      if (customEvent.detail && customEvent.detail.categoryId) {
+        console.log('Nueva categoría detectada en AdminPanel:', customEvent.detail.categoryId);
+      }
+    };
+    
+    document.addEventListener('productAdded', handleProductAdded);
+    document.addEventListener('categoryAdded', handleCategoryAdded);
+    
+    return () => {
+      document.removeEventListener('productAdded', handleProductAdded);
+      document.removeEventListener('categoryAdded', handleCategoryAdded);
+    };
+  }, [fetchCategories, fetchProducts]);
 
   // Pagination
   const pageSize = 10;
@@ -93,31 +120,51 @@ setEditData({
     await fetchProducts();
     setLoading(false);
   };
-  const handleAddProduct = async (data: { name: string; price: number; original_price: number; category: string; image_url: string; }) => {
+  const deleteCategory = async (id: string) => {
+    if (!confirm('¿Eliminar esta categoría?')) return;
     setLoading(true);
-    setError(null);
-    const { error } = await supabase.from('products').insert([{ ...data, user_id: userId }]);
-    if (error) setError(error.message);
-    else {
-      await fetchProducts();
-      setShowAddForm(false);
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) {
+      setError(error.message);
+    } else {
+      await fetchCategories();
     }
     setLoading(false);
   };
-  const addCategory = async () => {
-    const name = prompt('Nombre de la nueva categoría:');
-    if (!name) return;
-    const { error } = await supabase.from('categories').insert([{ name }]);
-    if (!error) {
-      const { data } = await supabase.from('categories').select('*').order('name');
-      setCategories(data || []);
+  
+  const handleAddProduct = async (data: { name: string; price: number; original_price: number; category: string; image_url: string; }): Promise<{ error?: Error } | undefined> => {
+    setLoading(true);
+    setError(null);
+    let insertResult;
+    try {
+      // Agregar stock infinito automáticamente a todos los productos nuevos
+      const productData = { 
+        ...data, 
+        user_id: userId,
+        stock_quantity: 999999 // Stock infinito automático
+      };
+      
+      console.log('📦 Creando producto con stock infinito:', productData.name);
+      insertResult = await supabase.from('products').insert([productData]);
+      
+      if (insertResult.error) {
+        setError(insertResult.error.message);
+        console.error('❌ Error al crear producto:', insertResult.error);
+      } else {
+        console.log('✅ Producto creado con stock infinito');
+        await fetchProducts();
+        setShowAddForm(false);
+      }
+      
+      await fetchCategories();
+      setLoading(false);
+      return { error: insertResult.error as Error | undefined };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError('Error al guardar el producto: ' + error.message);
+      setLoading(false);
+      return { error };
     }
-  };
-  const deleteCategory = async (id: string) => {
-    if (!confirm('¿Eliminar esta categoría?')) return;
-    await supabase.from('categories').delete().eq('id', id);
-    const { data } = await supabase.from('categories').select('*').order('name');
-    setCategories(data || []);
   };
 
   return (

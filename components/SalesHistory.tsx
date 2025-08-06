@@ -5,12 +5,13 @@ import { ListOrdered } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 interface Props {
-  userId: string;
+  userId: string | undefined;
   getThemeClass: (opts: { dark: string; light: string }) => string;
   limit?: number;
+  refreshTrigger?: number; // Nuevo prop para disparar actualizaciones
 }
 
-export function SalesHistory({ userId, getThemeClass, limit }: Props) {
+export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: Props) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(false);
   const [todayTotal, setTodayTotal] = useState(0);
@@ -22,31 +23,53 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
   });
   const [showTicket, setShowTicket] = useState<Sale | null>(null);
 
-  useEffect(() => {
+  const fetchSales = async () => {
+    if (!userId) {
+      console.warn('No hay userId disponible para cargar ventas');
+      setSales([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    supabase
-      .from('sales')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setSales(data || []);
-        setLoading(false);
-        if (data) {
-          const now = new Date();
-          const today = data.filter(sale => {
-            const d = new Date(sale.created_at);
-            return d.toDateString() === now.toDateString();
-          });
-          const month = data.filter(sale => {
-            const d = new Date(sale.created_at);
-            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-          });
-          setTodayTotal(today.reduce((sum, s) => sum + (s.total || 0), 0));
-          setMonthTotal(month.reduce((sum, s) => sum + (s.total || 0), 0));
-        }
-      });
-  }, [userId]);
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error al obtener ventas:', error);
+        setSales([]);
+        return;
+      }
+
+      setSales(data || []);
+      if (data) {
+        const now = new Date();
+        const today = data.filter(sale => {
+          const d = new Date(sale.created_at);
+          return d.toDateString() === now.toDateString();
+        });
+        const month = data.filter(sale => {
+          const d = new Date(sale.created_at);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        });
+        setTodayTotal(today.reduce((sum, s) => sum + (s.total || 0), 0));
+        setMonthTotal(month.reduce((sum, s) => sum + (s.total || 0), 0));
+      }
+    } catch (err) {
+      console.error('Error inesperado al obtener ventas:', err);
+      setSales([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSales();
+  }, [userId, refreshTrigger]); // Incluir refreshTrigger como dependencia
 
   // Filtrar ventas por fecha seleccionada
   let filteredSales = sales.filter(sale => {
@@ -94,7 +117,7 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
                   <td className="p-2 font-bold text-yellow-400">${sale.total?.toFixed(2)}</td>
                   <td className={getThemeClass({dark:'p-2 text-white',light:'p-2 text-zinc-900'})}>
                     <ul className={getThemeClass({dark:'list-disc pl-4 text-white',light:'list-disc pl-4 text-zinc-900'})}>
-                      {sale.products?.map((item: SaleProduct) => (
+                      {sale.items?.map((item: SaleProduct) => (
                         <li key={item.id}>{item.name} x{item.quantity}</li>
                       ))}
                     </ul>
@@ -118,7 +141,7 @@ export function SalesHistory({ userId, getThemeClass, limit }: Props) {
             <h2 className="text-xl font-bold mb-2 text-center">Ticket #{showTicket?.ticket_id || showTicket?.id}</h2>
             <div className="mb-2 text-center text-zinc-500 text-sm">{showTicket?.created_at ? new Date(showTicket.created_at).toLocaleString('es-ES') : ''}</div>
             <div className="mb-4">
-              {showTicket?.products?.map((item: SaleProduct) => (
+              {showTicket?.items?.map((item: SaleProduct) => (
                 <div key={item.id} className="flex justify-between">
                   <span>{item.name} x{item.quantity}</span>
                   <span>${(item.price * item.quantity).toFixed(2)}</span>

@@ -7,9 +7,19 @@ export interface SaleProduct extends Product {
 export interface Sale {
   id: string;
   user_id: string;
-  products: SaleProduct[];
+  customer_id?: string;
+  products: SaleProduct[]; // Campo principal JSONB
+  items: SaleProduct[];    // Campo adicional JSONB
+  subtotal: number;
+  tax_amount?: number;
+  discount_amount?: number;
   total: number;
-  date: string; // ISO string
-  ticket_id?: string;
+  payment_method?: string;
+  payment_status?: string;
+  status?: string;
+  notes?: string;
+  order_date?: string;
   created_at?: string;
+  updated_at?: string;
+  ticket_id?: string;
 }

@@ -9,9 +9,9 @@ export function TicketPreview({ sale }: Props) {
   return (
     <div className="bg-white text-zinc-900 rounded-lg p-6 w-80 mx-auto shadow-lg">
       <h2 className="text-xl font-bold mb-2 text-center">Ticket #{sale.ticket_id || sale.id}</h2>
-      <div className="mb-2 text-center text-zinc-500 text-sm">{formatDate(sale.date)}</div>
+      <div className="mb-2 text-center text-zinc-500 text-sm">{sale.created_at ? formatDate(sale.created_at) : ''}</div>
       <div className="mb-4">
-        {sale.products.map((item) => (
+        {(sale.items || sale.products || []).map((item) => (
           <div key={item.id} className="flex justify-between">
             <span>{item.name} x{item.quantity}</span>
             <span>{formatCurrency(item.price * item.quantity)}</span>

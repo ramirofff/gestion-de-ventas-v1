@@ -13,6 +13,7 @@ import EditProductModal from '@/components/EditProductModal';
 import { useCart } from '../hooks/useCart';
 import { createSale } from '../lib/sales';
 import { supabase } from '../lib/supabaseClient';
+import { verifyDatabase } from '../lib/databaseDiagnostic';
 import { AddProductForm } from '../components/AddProductForm';
 import { CategoryFilter } from '../components/CategoryFilter';
 import { AdminPanel } from '../components/AdminPanel';
@@ -20,6 +21,8 @@ import { SalesHistory } from '../components/SalesHistory';
 import { QRDisplay } from '../components/QRDisplay';
 import { useCategories } from '../hooks/useCategories';
 import { ProductSearch } from '../components/ProductSearch';
+import { DatabaseStatus } from '../components/DatabaseStatus';
+import { LoadingSpinner } from '../components/LoadingSpinner';
 
 
 
@@ -48,26 +51,6 @@ function openEditProduct(product: Product) {
     setEditError('');
     setEditSuccess(false);
   }
-
-  // Duplicar producto
-const duplicateProduct = useCallback(async (product: Product) => {
-    // Siempre enviar original_price, aunque el producto original no lo tenga
-    const originalPrice = typeof product.original_price === 'number' && !isNaN(product.original_price)
-      ? product.original_price
-      : product.price;
-    const { error } = await supabase.from('products').insert({
-      name: product.name + ' (Copia)',
-      price: product.price,
-      original_price: originalPrice,
-      category: product.category
-    });
-    if (error) {
-      setToast({ type: 'error', message: 'Error al duplicar: ' + error.message });
-    } else {
-      setToast({ type: 'success', message: 'Producto duplicado.' });
-      if (typeof window !== 'undefined') window.location.reload();
-    }
-  }, []);
 
   async function handleEditSave() {
     setEditError('');
@@ -129,8 +112,21 @@ const duplicateProduct = useCallback(async (product: Product) => {
   // Estados principales que se usan en hooks/utilidades
 type User = { id: string; email?: string };
 const [user, setUser] = useState<User | null>(null);
+const [showVerificationSuccess, setShowVerificationSuccess] = useState(false);
+const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0); // Para refrescar el historial de ventas
+
   // Cargar usuario autenticado de Supabase al montar y en cambios de sesión
   useEffect(() => {
+    // Verificar si el usuario viene de verificación exitosa
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('verified') === 'true') {
+      setShowVerificationSuccess(true);
+      // Limpiar el parámetro de la URL
+      window.history.replaceState({}, '', window.location.pathname);
+      // Ocultar el mensaje después de 5 segundos
+      setTimeout(() => setShowVerificationSuccess(false), 5000);
+    }
+
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user ? { id: user.id, email: user.email } : null);
@@ -154,17 +150,28 @@ const [ventas, setVentas] = useState<Sale[]>([]);
       (async () => {
         const { data, error } = await supabase
           .from('sales')
-          .select('id, total, products')
+          .select('id, total, products, items, subtotal, created_at, ticket_id')
           .eq('user_id', user.id);
         if (!error && data) {
-          type DBVenta = { id: string; user_id?: string; products?: SaleProduct[]; total?: number; date?: string; ticket_id?: string };
+          type DBVenta = { 
+            id: string; 
+            user_id?: string; 
+            products?: SaleProduct[]; 
+            items?: SaleProduct[];
+            total?: number; 
+            subtotal?: number;
+            created_at?: string; 
+            ticket_id?: string 
+          };
           setVentas(
             (data as DBVenta[]).map((sale) => ({
               id: sale.id,
               user_id: sale.user_id ?? '',
               products: sale.products ?? [],
+              items: sale.items ?? sale.products ?? [], // Usar items o products como fallback
               total: sale.total ?? 0,
-              date: sale.date ?? '',
+              subtotal: sale.subtotal ?? sale.total ?? 0,
+              created_at: sale.created_at ?? '',
               ticket_id: sale.ticket_id
             }))
           );
@@ -181,6 +188,7 @@ const [ventas, setVentas] = useState<Sale[]>([]);
       })();
     }
   }, [view, user]);
+
   // Estado para el nombre del negocio editable
   const [editingName, setEditingName] = useState(false);
   const [businessName, setBusinessName] = useState(() => {
@@ -198,22 +206,101 @@ const [ventas, setVentas] = useState<Sale[]>([]);
   };
 
   // Función para pagar (placeholder, debe tener la lógica real de pago)
-  const handlePay = () => {
+  const handlePay = async () => {
     setPaying(true);
     setShowQR(true);
-    setTimeout(() => {
-      setShowQR(false);
+    
+    try {
+      // Simular el proceso de pago
+      setTimeout(async () => {
+        setShowQR(false);
+        setPaying(false);
+        
+        // Generar ID del ticket
+        const ticketId = Math.floor(Math.random() * 100000);
+        
+        // Guardar la venta en la base de datos si hay un usuario autenticado
+        if (user && cart.length > 0) {
+          try {
+            console.log('Iniciando proceso de guardado de venta...');
+            console.log('Usuario:', user.id);
+            console.log('Carrito:', cart);
+            console.log('Total:', total);
+            
+            const { data, error } = await createSale(cart, total, user.id);
+            
+            if (error) {
+              console.error('Error al guardar la venta:', error);
+              console.error('Mensaje del error:', error.message || 'Sin mensaje');
+              console.error('Error completo:', JSON.stringify(error, null, 2));
+              
+              // Ejecutar diagnóstico de la base de datos
+              console.log('🔍 Ejecutando diagnóstico de la base de datos...');
+              const diagnostic = await verifyDatabase();
+              console.log('📋 Resultados del diagnóstico:', diagnostic);
+              
+              if (diagnostic.errors.length > 0) {
+                console.error('❌ Problemas encontrados:');
+                diagnostic.errors.forEach(error => console.error(`  - ${error}`));
+              }
+              
+              // No detener el proceso por el error, solo registrarlo
+            } else {
+              console.log('Venta guardada correctamente:', data);
+              // Disparar actualización del historial de ventas y reportes
+              setSalesRefreshTrigger(prev => prev + 1);
+              
+              // Actualizar reportes también
+              if (user) {
+                try {
+                  const { data: salesData } = await supabase
+                    .from('sales')
+                    .select('*')
+                    .eq('user_id', user.id);
+                  
+                  if (salesData) {
+                    const totalVentas = salesData.reduce((sum, sale) => sum + (sale.total || 0), 0);
+                    const cantidadTickets = salesData.length;
+                    const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
+                    setReportes({ totalVentas, cantidadTickets, promedio });
+                  }
+                } catch (reportError) {
+                  console.warn('Error al actualizar reportes:', reportError);
+                }
+              }
+            }
+          } catch (err) {
+            console.error('Error inesperado al guardar la venta:', err);
+            console.error('Tipo de error:', typeof err);
+            console.error('Error stringificado:', JSON.stringify(err, null, 2));
+          }
+        } else {
+          if (!user) {
+            console.warn('No hay usuario autenticado, no se puede guardar la venta');
+          }
+          if (!cart.length) {
+            console.warn('El carrito está vacío, no se puede guardar la venta');
+          }
+        }
+        
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 1500);
+        
+        // Crear el ticket visual
+        setTicket({
+          ticket_id: ticketId,
+          date: new Date(),
+          products: cart,
+          total,
+        });
+        
+        clearCart();
+      }, 3000);
+    } catch (error) {
+      console.error('Error en el proceso de pago:', error);
       setPaying(false);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 1500);
-      setTicket({
-        ticket_id: Math.floor(Math.random() * 100000),
-        date: new Date(),
-        products: cart,
-        total,
-      });
-      clearCart();
-    }, 3000);
+      setShowQR(false);
+    }
   };
 
   // ...existing code...
@@ -231,6 +318,7 @@ const [ventas, setVentas] = useState<Sale[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const { cart, addToCart, removeFromCart, clearCart, updateQuantity } = useCart();
   const [searchTerm, setSearchTerm] = useState('');
+  const [isInitialLoad, setIsInitialLoad] = useState(true); // Estado para controlar la primera carga
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
     if (typeof window !== 'undefined') {
       return JSON.parse(localStorage.getItem('favoriteProducts') || '[]');
@@ -249,6 +337,14 @@ const subtotal = cart.reduce((sum: number, item: Product & { quantity: number })
 const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: string | Date; products: (Product & { quantity: number })[]; total: number } | null>(null);
   const [paying, setPaying] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // Control de carga inicial de productos
+  useEffect(() => {
+    if (!loading && products.length >= 0) {
+      // Una vez que termine la primera carga (exitosa o no), ya no es inicial
+      setIsInitialLoad(false);
+    }
+  }, [loading, products]);
 
 
   // --- UTILIDADES VISUALES ---
@@ -318,7 +414,11 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
           <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
         </div>
         <div className={`mt-4 sm:mt-8`}>
-          <SalesHistory userId={user?.id} getThemeClass={getThemeClass} />
+          <SalesHistory 
+            userId={user?.id} 
+            getThemeClass={getThemeClass} 
+            refreshTrigger={salesRefreshTrigger}
+          />
         </div>
       </main>
     );
@@ -515,6 +615,26 @@ favoritos.map((prod: Product) => (
   // Vista principal
   return (
     <>
+      <DatabaseStatus />
+      {/* Pantalla de carga inicial completa */}
+      {isInitialLoad && loading && (
+        <div className={`fixed inset-0 z-50 flex items-center justify-center ${theme === 'dark' ? 'bg-zinc-950' : 'bg-white'}`}>
+          <div className="flex flex-col items-center space-y-6">
+            <div className="flex items-center space-x-2">
+              <LoadingSpinner />
+              <div className={`text-2xl font-bold ${theme === 'dark' ? 'text-yellow-400' : 'text-yellow-600'}`}>
+                Gestion de ventas V1
+              </div>
+            </div>
+            <p className={`text-lg ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>
+              Cargando productos...
+            </p>
+            <p className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'} max-w-md text-center`}>
+              Por favor espera mientras obtenemos el menú desde la base de datos
+            </p>
+          </div>
+        </div>
+      )}
       <title>Gestion de ventas V1</title>
       <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
       <div className="flex flex-col sm:flex-row items-center justify-between mb-4 sm:mb-8 gap-2 sm:gap-0">
@@ -540,6 +660,20 @@ favoritos.map((prod: Product) => (
             </div>
           )}
         </div>
+        
+        {/* Mensaje de verificación exitosa */}
+        {showVerificationSuccess && (
+          <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-center animate-fade-in">
+            <div className="flex items-center justify-center mb-2">
+              <CheckCircle2 className="w-6 h-6 text-green-500 mr-2" />
+              <h3 className="text-lg font-bold text-green-500">¡Cuenta verificada exitosamente!</h3>
+            </div>
+            <p className="text-green-400 text-sm">
+              Tu email ha sido confirmado y tu cuenta está lista para usar. ¡Bienvenido a Gestión de Ventas V1!
+            </p>
+          </div>
+        )}
+        
         {/* Botones de navegación y modo */}
         {user && (
           <div className="flex flex-wrap gap-4 mb-10 items-center animate-fade-in">
@@ -582,15 +716,28 @@ favoritos.map((prod: Product) => (
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6" role="list">
               {loading ? (
-                <div className={`col-span-full text-center ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>Cargando productos...</div>
+                <div className="col-span-full">
+                  <div className={`flex flex-col items-center justify-center py-20 px-4 rounded-2xl ${theme === 'dark' ? 'bg-zinc-800/50' : 'bg-yellow-100/50'} border ${theme === 'dark' ? 'border-zinc-700' : 'border-yellow-200'}`}>
+                    <LoadingSpinner />
+                    <p className={`mt-4 text-lg font-medium ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                      Cargando productos...
+                    </p>
+                    <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                      Por favor espera mientras obtenemos el menú
+                    </p>
+                  </div>
+                </div>
               ) : products.length === 0 ? (
                 <div className={`col-span-full text-center ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>No hay productos disponibles.</div>
               ) : (
                 <>
                   {(() => {
-                    const filteredProducts = products.filter((product: Product) =>
-                      (!selectedCategory || product.category === selectedCategory) &&
-                      (!searchTerm || product.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                    const filteredProducts = products.filter((product: Product) => {
+                      if (selectedCategory === '') return true;
+                      if (selectedCategory === 'none') return !product.category;
+                      return product.category === selectedCategory;
+                    }).filter((product: Product) =>
+                      !searchTerm || product.name.toLowerCase().includes(searchTerm.toLowerCase())
                     );
                     return filteredProducts.map((product: Product) => (
                       <div key={product.id} className={`relative group transition-all duration-200 ${product.inactive ? 'opacity-50 pointer-events-none' : ''}`} role="listitem">
@@ -598,7 +745,7 @@ favoritos.map((prod: Product) => (
                           addToCart(product);
                           setShowAddAnim(true);
                           setTimeout(() => setShowAddAnim(false), 500);
-                        }} getThemeClass={getThemeClass} />
+                        }} getThemeClass={getThemeClass} categories={categories} />
                         {/* Botón editar */}
                         <button
                           className="absolute top-2 right-10 z-10 text-xl text-blue-400 hover:text-blue-600 transition-colors bg-white/80 dark:bg-zinc-900/80 rounded-full p-1 shadow focus:ring-2 focus:ring-blue-400"
@@ -608,16 +755,6 @@ favoritos.map((prod: Product) => (
                           role="button"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-4.243 1.414 1.414-4.243a4 4 0 01.828-1.414z" /></svg>
-                        </button>
-                        {/* Botón duplicar */}
-                        <button
-                          className="absolute top-2 right-20 z-10 text-xl text-green-400 hover:text-green-600 transition-colors bg-white/80 dark:bg-zinc-900/80 rounded-full p-1 shadow focus:ring-2 focus:ring-green-400"
-                          onClick={() => duplicateProduct(product)}
-                          aria-label="Duplicar producto"
-                          tabIndex={0}
-                          role="button"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-8-4h8M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
                         </button>
                         {/* Botón favorito */}
                         <button
