@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AuthGuard } from "@/components/AuthGuard";
+import { ProductsProvider } from "@/components/ProductsProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,7 +14,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-
 export const metadata: Metadata = {
   title: "Gestión de ventas V1",
   description: "Sistema de gestión de ventas para tu negocio.",
@@ -21,25 +22,19 @@ export const metadata: Metadata = {
   },
 };
 
-
-
-import { AuthGuard } from "@/components/AuthGuard";
-import { ProductsProvider } from "@/components/ProductsProvider";
-
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="es">
-      <body
-        className={`bg-zinc-950 text-white min-h-screen ${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {/* Aquí se pueden renderizar toasts globales, modales, etc. */}
-        <ProductsProvider>
-          <AuthGuard>{children}</AuthGuard>
-        </ProductsProvider>
+      <body>
+        <AuthGuard>
+          <ProductsProvider>
+            {children}
+          </ProductsProvider>
+        </AuthGuard>
       </body>
     </html>
   );

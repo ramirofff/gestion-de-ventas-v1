@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Product } from '../types/product';
 import type { Sale, SaleProduct } from '../types/sale';
 import type { Category } from '../types/category';
-import { Boxes, ListOrdered, ShoppingCart, CheckCircle2, BarChart2, PieChart, Zap, HelpCircle } from 'lucide-react';
+import { Boxes, ListOrdered, ShoppingCart, CheckCircle2, BarChart2, PieChart, Zap, HelpCircle, CreditCard } from 'lucide-react';
 
 import { useProductsContext } from '../components/ProductsProvider';
 import { ProductCard } from '../components/ProductCard';
@@ -18,7 +18,7 @@ import { AddProductForm } from '../components/AddProductForm';
 import { CategoryFilter } from '../components/CategoryFilter';
 import { AdminPanel } from '../components/AdminPanel';
 import { SalesHistory } from '../components/SalesHistory';
-import { QRDisplay } from '../components/QRDisplay';
+import { StripePayment } from '../components/StripePayment';
 import { useCategories } from '../hooks/useCategories';
 import { ProductSearch } from '../components/ProductSearch';
 import { DatabaseStatus } from '../components/DatabaseStatus';
@@ -114,6 +114,7 @@ type User = { id: string; email?: string };
 const [user, setUser] = useState<User | null>(null);
 const [showVerificationSuccess, setShowVerificationSuccess] = useState(false);
 const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0); // Para refrescar el historial de ventas
+const [stripeConfigured, setStripeConfigured] = useState<boolean>(false);
 
   // Cargar usuario autenticado de Supabase al montar y en cambios de sesión
   useEffect(() => {
@@ -132,6 +133,12 @@ const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0); // Para refre
       setUser(user ? { id: user.id, email: user.email } : null);
     };
     getUser();
+
+    // Verificar si Stripe ya está configurado
+    const stripeAccountId = localStorage.getItem('stripe_express_account_id');
+    const stripeConfiguredFlag = localStorage.getItem('stripe_configured');
+    setStripeConfigured(!!stripeAccountId || stripeConfiguredFlag === 'true');
+
     // Suscribirse a cambios de sesión
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
@@ -191,6 +198,15 @@ const [ventas, setVentas] = useState<Sale[]>([]);
 
   // Estado para el nombre del negocio editable
   const [editingName, setEditingName] = useState(false);
+
+  // Función para configurar Stripe Express
+  const handleStripeConfiguration = () => {
+    // Navegar en la misma ventana en lugar de abrir nueva ventana
+    window.location.href = '/stripe/express';
+    // Marcar como configurado para no mostrarlo más
+    localStorage.setItem('stripe_configured', 'true');
+    setStripeConfigured(true);
+  };
   const [businessName, setBusinessName] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('businessName') || 'Gestion de ventas V1';
@@ -205,101 +221,81 @@ const [ventas, setVentas] = useState<Sale[]>([]);
     }
   };
 
-  // Función para pagar (placeholder, debe tener la lógica real de pago)
+  // Función para pagar con Stripe
   const handlePay = async () => {
+    if (cart.length === 0) {
+      return;
+    }
+    
+    // Mostrar modal de pago de Stripe
+    setShowStripePayment(true);
+  };
+
+  // Función que se ejecuta después de un pago exitoso con Stripe
+  const handleStripePaymentSuccess = async () => {
     setPaying(true);
-    setShowQR(true);
     
     try {
-      // Simular el proceso de pago
-      setTimeout(async () => {
-        setShowQR(false);
-        setPaying(false);
-        
-        // Generar ID del ticket
-        const ticketId = Math.floor(Math.random() * 100000);
-        
-        // Guardar la venta en la base de datos si hay un usuario autenticado
-        if (user && cart.length > 0) {
-          try {
-            console.log('Iniciando proceso de guardado de venta...');
-            console.log('Usuario:', user.id);
-            console.log('Carrito:', cart);
-            console.log('Total:', total);
+      // Generar ID del ticket
+      const ticketId = Math.floor(Math.random() * 100000);
+      
+      // Guardar la venta en la base de datos si hay un usuario autenticado
+      if (user && cart.length > 0) {
+        try {
+          console.log('Iniciando proceso de guardado de venta después de pago exitoso...');
+          console.log('Usuario:', user.id);
+          console.log('Carrito:', cart);
+          console.log('Total:', total);
+          
+          const { data, error } = await createSale(cart, total, user.id);
+          
+          if (error) {
+            console.error('Error al guardar la venta:', error);
+          } else {
+            console.log('Venta guardada correctamente:', data);
+            // Disparar actualización del historial de ventas y reportes
+            setSalesRefreshTrigger(prev => prev + 1);
             
-            const { data, error } = await createSale(cart, total, user.id);
-            
-            if (error) {
-              console.error('Error al guardar la venta:', error);
-              console.error('Mensaje del error:', error.message || 'Sin mensaje');
-              console.error('Error completo:', JSON.stringify(error, null, 2));
-              
-              // Ejecutar diagnóstico de la base de datos
-              console.log('🔍 Ejecutando diagnóstico de la base de datos...');
-              const diagnostic = await verifyDatabase();
-              console.log('📋 Resultados del diagnóstico:', diagnostic);
-              
-              if (diagnostic.errors.length > 0) {
-                console.error('❌ Problemas encontrados:');
-                diagnostic.errors.forEach(error => console.error(`  - ${error}`));
-              }
-              
-              // No detener el proceso por el error, solo registrarlo
-            } else {
-              console.log('Venta guardada correctamente:', data);
-              // Disparar actualización del historial de ventas y reportes
-              setSalesRefreshTrigger(prev => prev + 1);
-              
-              // Actualizar reportes también
-              if (user) {
-                try {
-                  const { data: salesData } = await supabase
-                    .from('sales')
-                    .select('*')
-                    .eq('user_id', user.id);
-                  
-                  if (salesData) {
-                    const totalVentas = salesData.reduce((sum, sale) => sum + (sale.total || 0), 0);
-                    const cantidadTickets = salesData.length;
-                    const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
-                    setReportes({ totalVentas, cantidadTickets, promedio });
-                  }
-                } catch (reportError) {
-                  console.warn('Error al actualizar reportes:', reportError);
+            // Actualizar reportes también
+            if (user) {
+              try {
+                const { data: salesData } = await supabase
+                  .from('sales')
+                  .select('*')
+                  .eq('user_id', user.id);
+                
+                if (salesData) {
+                  const totalVentas = salesData.reduce((sum, sale) => sum + (sale.total || 0), 0);
+                  const cantidadTickets = salesData.length;
+                  const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
+                  setReportes({ totalVentas, cantidadTickets, promedio });
                 }
+              } catch (reportError) {
+                console.warn('Error al actualizar reportes:', reportError);
               }
             }
-          } catch (err) {
-            console.error('Error inesperado al guardar la venta:', err);
-            console.error('Tipo de error:', typeof err);
-            console.error('Error stringificado:', JSON.stringify(err, null, 2));
           }
-        } else {
-          if (!user) {
-            console.warn('No hay usuario autenticado, no se puede guardar la venta');
-          }
-          if (!cart.length) {
-            console.warn('El carrito está vacío, no se puede guardar la venta');
-          }
+        } catch (err) {
+          console.error('Error inesperado al guardar la venta:', err);
         }
-        
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 1500);
-        
-        // Crear el ticket visual
-        setTicket({
-          ticket_id: ticketId,
-          date: new Date(),
-          products: cart,
-          total,
-        });
-        
-        clearCart();
-      }, 3000);
-    } catch (error) {
-      console.error('Error en el proceso de pago:', error);
+      }
+      
       setPaying(false);
-      setShowQR(false);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 1500);
+      
+      // Crear el ticket visual
+      setTicket({
+        ticket_id: ticketId,
+        date: new Date(),
+        products: cart,
+        total,
+      });
+      
+      clearCart();
+    } catch (error) {
+      console.error('Error en el proceso post-pago:', error);
+      setPaying(false);
     }
   };
 
@@ -333,7 +329,7 @@ const [ventas, setVentas] = useState<Sale[]>([]);
 const subtotal = cart.reduce((sum: number, item: Product & { quantity: number }) => sum + item.price * item.quantity, 0);
   const discountValue = discountType === 'amount' ? discount : Math.round((subtotal * discount) / 100);
   const total = Math.max(0, subtotal - discountValue);
-  const [showQR, setShowQR] = useState(false);
+  const [showStripePayment, setShowStripePayment] = useState(false);
 const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: string | Date; products: (Product & { quantity: number })[]; total: number } | null>(null);
   const [paying, setPaying] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -695,6 +691,14 @@ favoritos.map((prod: Product) => (
             <button onClick={() => setView('help')} className={`${btnBase} ${btnHelp} transition-transform hover:scale-105`}>
               <HelpCircle className="w-6 h-6 text-blue-400" /> Soporte / Ayuda
             </button>
+            {!stripeConfigured && (
+              <button 
+                onClick={handleStripeConfiguration} 
+                className={`${btnBase} bg-gradient-to-r from-purple-600 to-blue-600 text-white border-purple-500 transition-transform hover:scale-105 animate-pulse`}
+              >
+                <CreditCard className="w-6 h-6 text-yellow-300" /> 🚀 Configurar Pagos (Stripe)
+              </button>
+            )}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className={`${btnBase} ${btnTheme} ml-4 transition-transform hover:scale-105`}
@@ -708,6 +712,27 @@ favoritos.map((prod: Product) => (
         <div className="flex-1">
           <>
             <h2 className={`text-2xl font-bold mb-6 ${textMain}`}>Menú de productos</h2>
+            
+            {!stripeConfigured && (
+              <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-l-4 border-blue-500 rounded-lg shadow-sm">
+                <div className="flex items-center">
+                  <CreditCard className="w-5 h-5 text-blue-600 mr-2" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-blue-800">🚀 ¡Configura tu sistema de pagos!</h3>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Configura Stripe Express para empezar a recibir pagos con tarjetas de crédito.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleStripeConfiguration}
+                    className="ml-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Configurar Ahora
+                  </button>
+                </div>
+              </div>
+            )}
+
             <ProductSearch onSearch={setSearchTerm} />
             <CategoryFilter
               categories={categories}
@@ -882,10 +907,10 @@ favoritos.map((prod: Product) => (
                   <span className={theme === 'dark' ? 'text-yellow-300 font-bold text-lg' : 'text-yellow-600 font-bold text-lg'}>{discountType === 'amount' ? '$' : '%'}</span>
                 </div>
               </div>
-              {/* Método de pago fijo: QR */}
+              {/* Método de pago fijo: Stripe */}
               <div className="mt-4 flex items-center gap-2">
                 <span className="block text-sm font-semibold text-yellow-700 dark:text-yellow-300">Método de pago:</span>
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-yellow-100 dark:bg-zinc-800 text-yellow-700 dark:text-yellow-200 font-bold border border-yellow-300 dark:border-yellow-700">QR</span>
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-100 dark:bg-zinc-800 text-blue-700 dark:text-blue-200 font-bold border border-blue-300 dark:border-blue-700">💳 Stripe</span>
               </div>
               <div className="flex flex-col gap-1 mt-4">
                 <div className="flex justify-between items-center">
@@ -934,15 +959,18 @@ favoritos.map((prod: Product) => (
           </div>
         )}
       </div>
-      {/* QR simulación */}
-      {showQR && (
-        <div className={`fixed inset-0 ${overlayBg} z-[120] flex items-center justify-center transition-colors`}>
-          <div className={`${modalBg} rounded-2xl p-8 flex flex-col items-center ${cardShadow} border ${modalBorder} transition-colors`}>
-            <QRDisplay value={`pago-${Date.now()}`} size={180} />
-            <div className={`mt-4 text-lg font-bold ${modalText}`}>Escanea para pagar</div>
-            <div className={`mt-2 ${getThemeClass({dark:'text-zinc-500',light:'text-yellow-800'})}`}>Simulando pago QR...</div>
-          </div>
-        </div>
+      {/* Pago con Stripe */}
+      {showStripePayment && (
+        <StripePayment 
+          amount={total}
+          items={cart.map(item => ({
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            description: item.category || undefined
+          }))}
+          onClose={() => setShowStripePayment(false)}
+        />
       )}
       {/* Ticket visual */}
       {ticket && (
