@@ -70,10 +70,12 @@ export async function POST(request: NextRequest) {
         description: description || '',
         created_at: new Date().toISOString(),
       },
-      // Configuración para Estados Unidos
-      billing_address_collection: 'required',
-      shipping_address_collection: {
-        allowed_countries: ['US', 'AR', 'BR', 'MX', 'CA'],
+      // Configuración para punto de venta físico (sin envío)
+      billing_address_collection: 'auto', // Solo si es necesario para el procesador de pagos
+      // shipping_address_collection: NO incluir esta línea = sin dirección de envío
+      allow_promotion_codes: true, // Permitir códigos de descuento
+      payment_intent_data: {
+        receipt_email: customer_email || undefined,
       },
     });
 
