@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Crear sesión de checkout
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      payment_method_types: ['card'], // Tarjetas internacionales (perfecto para Argentina)
       line_items: lineItems,
       mode: 'payment',
       success_url: success_url || defaultSuccessUrl,
@@ -69,14 +69,18 @@ export async function POST(request: NextRequest) {
       metadata: {
         description: description || '',
         created_at: new Date().toISOString(),
+        merchant_country: 'AR', // Identificar comerciantes argentinos
       },
-      // Configuración para punto de venta físico (sin envío)
-      billing_address_collection: 'auto', // Solo si es necesario para el procesador de pagos
-      // shipping_address_collection: NO incluir esta línea = sin dirección de envío
-      allow_promotion_codes: true, // Permitir códigos de descuento
+      // Configuración optimizada para Argentina recibiendo pagos internacionales
+      billing_address_collection: 'auto', 
+      allow_promotion_codes: true, 
       payment_intent_data: {
         receipt_email: customer_email || undefined,
       },
+      // Optimizado para turistas/clientes internacionales
+      locale: 'es', // Formulario en español
+      submit_type: 'pay', // Botón optimizado
+      phone_number_collection: { enabled: false }, // No necesario para turistas
     });
 
     return NextResponse.json({

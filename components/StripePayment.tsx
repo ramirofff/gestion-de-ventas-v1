@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { QRDisplay } from './QRDisplay';
 
 interface StripePaymentProps {
   amount: number;
@@ -17,6 +18,7 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
   const [loading, setLoading] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showQR, setShowQR] = useState(false); // Nuevo estado para alternar QR/Link
 
   const createPaymentLink = async () => {
     setLoading(true);
@@ -205,24 +207,80 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
               color: '#374151',
               fontSize: '14px'
             }}>
-              Tu enlace de pago está listo. Haz clic para proceder al checkout de Stripe.
+              Elige cómo quieres proceder con el pago:
             </p>
-            <button
-              onClick={handlePaymentClick}
-              style={{
-                backgroundColor: '#6366f1',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 24px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                width: '100%'
-              }}
-            >
-              🚀 Ir a Stripe Checkout
-            </button>
+
+            {/* Botones para alternar entre Link y QR */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginBottom: '16px'
+            }}>
+              <button
+                onClick={() => setShowQR(false)}
+                style={{
+                  backgroundColor: !showQR ? '#3b82f6' : '#e5e7eb',
+                  color: !showQR ? 'white' : '#374151',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  flex: 1
+                }}
+              >
+                🔗 Link de Pago
+              </button>
+              <button
+                onClick={() => setShowQR(true)}
+                style={{
+                  backgroundColor: showQR ? '#3b82f6' : '#e5e7eb',
+                  color: showQR ? 'white' : '#374151',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  flex: 1
+                }}
+              >
+                📱 Código QR
+              </button>
+            </div>
+
+            {/* Mostrar QR o Link según selección */}
+            {showQR ? (
+              <div style={{ textAlign: 'center' }}>
+                <QRDisplay 
+                  value={paymentUrl}
+                  size={200}
+                />
+                <p style={{ 
+                  margin: '12px 0',
+                  color: '#374151',
+                  fontSize: '14px'
+                }}>
+                  📱 Escanea el código QR para pagar con tarjeta internacional
+                </p>
+              </div>
+            ) : (
+              <button
+                onClick={handlePaymentClick}
+                style={{
+                  backgroundColor: '#6366f1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '12px 24px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                🚀 Ir a Stripe Checkout
+              </button>
+            )}
           </div>
         ) : (
           <button
