@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 export default function PaymentSuccess() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const sessionId = searchParams.get('session_id');
   const [paymentData, setPaymentData] = useState<{
     sessionId: string;
@@ -16,21 +17,27 @@ export default function PaymentSuccess() {
 
   useEffect(() => {
     if (sessionId) {
-      // Aquí podrías hacer una llamada al API para obtener detalles del pago
-      // Por ahora simulamos los datos
+      // Simular datos del pago
       setTimeout(() => {
         setPaymentData({
           sessionId,
           amount: 'Variable',
-          currency: 'ARS',
+          currency: 'USD', // Cambiado a USD
           status: 'paid'
         });
         setLoading(false);
+        
+        // Redirigir automáticamente a la página principal después de 3 segundos
+        setTimeout(() => {
+          window.close(); // Cerrar la ventana si se abrió en nueva pestaña
+          // Si no se puede cerrar, redirigir
+          router.push('/?payment=success');
+        }, 3000);
       }, 1000);
     } else {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, router]);
 
   if (loading) {
     return (

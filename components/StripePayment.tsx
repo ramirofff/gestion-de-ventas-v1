@@ -23,6 +23,10 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
     setError(null);
 
     try {
+      // Guardar datos del carrito en localStorage para recuperarlos después del pago
+      localStorage.setItem('pre_payment_cart', JSON.stringify(items));
+      localStorage.setItem('pre_payment_total', amount.toString());
+
       const response = await fetch('/api/stripe/payment', {
         method: 'POST',
         headers: {

@@ -128,6 +128,47 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(false);
       setTimeout(() => setShowVerificationSuccess(false), 5000);
     }
 
+    // Verificar si el usuario regresa después de un pago exitoso
+    if (urlParams.get('payment') === 'success') {
+      // Recuperar datos del carrito guardados antes del pago
+      const prePaymentCart = localStorage.getItem('pre_payment_cart');
+      const prePaymentTotal = localStorage.getItem('pre_payment_total');
+      
+      if (prePaymentCart && prePaymentTotal) {
+        const cartData = JSON.parse(prePaymentCart);
+        const totalAmount = parseFloat(prePaymentTotal);
+        
+        // Crear el ticket con los datos reales del pago
+        const ticketId = Math.floor(Math.random() * 100000);
+        setTicket({
+          ticket_id: ticketId,
+          date: new Date(),
+          products: cartData,
+          total: totalAmount,
+        });
+        
+        // Limpiar datos temporales del localStorage
+        localStorage.removeItem('pre_payment_cart');
+        localStorage.removeItem('pre_payment_total');
+      } else {
+        // Fallback si no hay datos guardados
+        const ticketId = Math.floor(Math.random() * 100000);
+        setTicket({
+          ticket_id: ticketId,
+          date: new Date(),
+          products: [],
+          total: 0,
+        });
+      }
+      
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 1500);
+      setToast({ type: 'success', message: '¡Pago procesado exitosamente!' });
+      
+      // Limpiar el parámetro de la URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user ? { id: user.id, email: user.email } : null);
@@ -224,6 +265,24 @@ const [ventas, setVentas] = useState<Sale[]>([]);
   // Función para pagar con Stripe
   const handlePay = async () => {
     if (cart.length === 0) {
+      setToast({ type: 'error', message: 'No hay productos en el carrito' });
+      return;
+    }
+
+    // Verificar si Stripe está configurado
+    const stripeAccountId = localStorage.getItem('stripe_express_account_id');
+    const stripeConfiguredFlag = localStorage.getItem('stripe_configured');
+    
+    if (!stripeAccountId && stripeConfiguredFlag !== 'true') {
+      setToast({ 
+        type: 'error', 
+        message: 'Debes configurar tu cuenta de Stripe antes de procesar pagos' 
+      });
+      // Mostrar opción para configurar
+      const shouldConfigure = confirm('¿Quieres configurar tu cuenta de Stripe ahora?');
+      if (shouldConfigure) {
+        handleStripeConfiguration();
+      }
       return;
     }
     
