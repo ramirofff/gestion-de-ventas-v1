@@ -35,17 +35,25 @@ export async function POST(request: NextRequest) {
       price: number;
       quantity: number;
       description?: string;
-    }) => ({
-      price_data: {
-        currency: currency,
-        product_data: {
-          name: item.name || 'Producto',
-          description: item.description || '',
+    }) => {
+      const productData: any = {
+        name: item.name || 'Producto',
+      };
+      
+      // Solo agregar descripción si no está vacía
+      if (item.description && item.description.trim() !== '') {
+        productData.description = item.description;
+      }
+      
+      return {
+        price_data: {
+          currency: currency,
+          product_data: productData,
+          unit_amount: Math.round(item.price * 100), // Stripe usa centavos
         },
-        unit_amount: Math.round(item.price * 100), // Stripe usa centavos
-      },
-      quantity: item.quantity || 1,
-    }));
+        quantity: item.quantity || 1,
+      };
+    });
 
     // Si no hay items específicos, crear uno genérico
     if (lineItems.length === 0) {
