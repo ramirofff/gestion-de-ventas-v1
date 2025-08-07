@@ -36,43 +36,8 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
       const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
       console.log('💾 Ventas encontradas en localStorage:', localSales.length);
       
-      // LIMPIAR DUPLICADOS AUTOMÁTICAMENTE
-      const uniqueSales: any[] = [];
-      const seenIds = new Set<string>();
-      const seenSessionIds = new Set<string>();
-      
-      localSales.forEach((sale: any) => {
-        const saleId = sale.id?.toString();
-        const sessionId = sale.session_id;
-        const paymentIntentId = sale.stripe_payment_intent_id;
-        
-        // Verificar duplicados por múltiples criterios
-        const isDuplicate = 
-          (saleId && seenIds.has(saleId)) ||
-          (sessionId && seenSessionIds.has(sessionId)) ||
-          uniqueSales.some((existingSale: any) => 
-            existingSale.stripe_payment_intent_id && 
-            paymentIntentId && 
-            existingSale.stripe_payment_intent_id === paymentIntentId
-          );
-        
-        if (!isDuplicate) {
-          uniqueSales.push(sale);
-          if (saleId) seenIds.add(saleId);
-          if (sessionId) seenSessionIds.add(sessionId);
-        } else {
-          console.log('🗑️ Eliminando duplicado:', saleId, sessionId);
-        }
-      });
-      
-      // Guardar la lista limpia de vuelta en localStorage
-      if (uniqueSales.length !== localSales.length) {
-        localStorage.setItem('sales', JSON.stringify(uniqueSales));
-        console.log('🧹 Duplicados eliminados. Antes:', localSales.length, 'Después:', uniqueSales.length);
-      }
-      
       // Convertir las ventas del localStorage al formato esperado
-      const formattedLocalSales: Sale[] = uniqueSales.map((sale: any) => ({
+      const formattedLocalSales: Sale[] = localSales.map((sale: any) => ({
         id: sale.id || sale.ticket_id,
         ticket_id: sale.ticket_id || sale.id,
         created_at: sale.created_at || sale.date || new Date().toISOString(),
@@ -253,90 +218,51 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
         )}
       </div>
 
-      {/* Modal para mostrar ticket mejorado */}
+      {/* Modal para mostrar ticket */}
       {showTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-          <div className="bg-white text-black rounded-2xl shadow-2xl max-w-sm w-full mx-4 relative">
-            {/* Botón cerrar */}
-            <button
-              onClick={() => setShowTicket(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl font-bold z-10"
-            >
-              ×
-            </button>
-            
-            {/* Ticket profesional */}
-            <div className="p-8">
-              {/* Header del negocio */}
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 mb-1">Mi Negocio</h2>
-                <div className="text-gray-500 text-sm">Sistema de Gestión de Ventas</div>
-                <div className="text-gray-400 text-xs">Av. Principal 123, Ciudad</div>
-                <div className="text-gray-400 text-xs">Tel. (555) 123-4567</div>
-              </div>
-              
-              {/* Línea separadora */}
-              <div className="border-t-2 border-dashed border-gray-300 my-4"></div>
-              
-              {/* Info del ticket */}
-              <div className="text-center mb-6">
-                <h3 className="text-xl font-bold text-gray-800 mb-2">TICKET DE VENTA</h3>
-                <div className="text-lg font-mono text-gray-700">#{showTicket.ticket_id}</div>
-                <div className="text-sm text-gray-500 mt-1">
-                  {showTicket.created_at ? new Date(showTicket.created_at).toLocaleString() : 'N/A'}
-                </div>
-                <div className="text-xs text-gray-400 mt-1">Cajero: ramirozaratee@gmail.com</div>
-              </div>
-              
-              {/* Productos */}
-              <div className="mb-6">
-                <h4 className="font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">PRODUCTOS</h4>
-                <div className="space-y-2">
-                  {(showTicket.products || showTicket.items || []).map((item: any, index: number) => (
-                    <div key={index} className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-800">{item.name || 'Producto'}</div>
-                        <div className="text-xs text-gray-500">
-                          ${(item.price || 0).toFixed(2)} x {item.quantity || 1}
-                        </div>
-                      </div>
-                      <div className="font-bold text-gray-800 ml-4">
-                        ${((item.price || 0) * (item.quantity || 1)).toFixed(2)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Línea separadora */}
-              <div className="border-t-2 border-dashed border-gray-300 my-4"></div>
-              
-              {/* Total */}
-              <div className="mb-6">
-                <div className="flex justify-between items-center text-2xl font-bold">
-                  <span className="text-gray-800">TOTAL A PAGAR:</span>
-                  <span className="text-green-600">${(showTicket.total || 0).toFixed(2)}</span>
-                </div>
-              </div>
-              
-              {/* Footer */}
-              <div className="text-center text-xs text-gray-400 space-y-1">
-                <div>¡Gracias por su compra!</div>
-                <div>Conserve este ticket como comprobante</div>
-                <div className="mt-3 pt-2 border-t border-gray-200">
-                  Powered by Mi Negocio - POS v1.0
-                </div>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className={getThemeClass({dark:'bg-zinc-900',light:'bg-white'}) + " p-6 rounded-lg shadow-lg max-w-md w-full mx-4"}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className={getThemeClass({dark:'text-white',light:'text-gray-900'}) + " text-lg font-bold"}>
+                Ticket #{showTicket.ticket_id}
+              </h3>
+              <button
+                onClick={() => setShowTicket(null)}
+                className={getThemeClass({dark:'text-gray-400 hover:text-white',light:'text-gray-600 hover:text-gray-900'}) + " text-xl"}
+              >
+                ×
+              </button>
             </div>
             
-            {/* Botón imprimir */}
-            <div className="px-8 pb-6">
-              <button
-                onClick={() => window.print()}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-colors"
-              >
-                Imprimir ticket
-              </button>
+            <div className="mb-4">
+              <div className={getThemeClass({dark:'text-gray-300',light:'text-gray-600'}) + " text-sm mb-2"}>
+                {businessName}
+              </div>
+              <div className={getThemeClass({dark:'text-gray-300',light:'text-gray-600'}) + " text-sm mb-4"}>
+                {showTicket.created_at ? new Date(showTicket.created_at).toLocaleString() : 'N/A'}
+              </div>
+              
+              <div className="space-y-2 mb-4">
+                {(showTicket.products || showTicket.items || []).map((item: any, index: number) => (
+                  <div key={index} className="flex justify-between">
+                    <span className={getThemeClass({dark:'text-white',light:'text-gray-900'})}>
+                      {item.name || 'Producto'} x{item.quantity || 1}
+                    </span>
+                    <span className={getThemeClass({dark:'text-white',light:'text-gray-900'})}>
+                      ${((item.price || 0) * (item.quantity || 1)).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="border-t pt-2">
+                <div className="flex justify-between font-bold">
+                  <span className={getThemeClass({dark:'text-white',light:'text-gray-900'})}>Total:</span>
+                  <span className={getThemeClass({dark:'text-green-400',light:'text-green-600'})}>
+                    ${(showTicket.total || 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

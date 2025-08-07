@@ -13,9 +13,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    console.log('🔍 Verificando estado del pago para session:', sessionId);
+
     // Obtener información de la sesión de Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ['payment_intent']
+    });
+
+    console.log('📊 Estado de la sesión:', {
+      status: session.status,
+      payment_status: session.payment_status,
+      amount_total: session.amount_total,
+      session_id: sessionId
     });
 
     return NextResponse.json({
@@ -28,7 +37,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: unknown) {
-    console.error('Error checking payment status:', error);
+    console.error('❌ Error checking payment status:', error);
     return NextResponse.json(
       { error: (error as Error).message || 'Failed to check payment status' },
       { status: 500 }

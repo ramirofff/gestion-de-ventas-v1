@@ -63,58 +63,10 @@ export default function PaymentSuccess() {
         
         if (verifyResponse.ok) {
           const verifyData = await verifyResponse.json();
-          console.log('✅ PaymentSuccess: Pago verificado:', verifyData);
-          
-          // GUARDAR EN LOCALSTORAGE INMEDIATAMENTE (EVITAR DUPLICADOS)
-          if (verifyData.success && verifyData.cart_data && verifyData.total) {
-            console.log('💾 PaymentSuccess: Guardando en localStorage...');
-            
-            // Verificar si ya existe esta venta para evitar duplicados
-            const existingSales = JSON.parse(localStorage.getItem('sales') || '[]');
-            const existingSession = existingSales.find((sale: any) => 
-              sale.session_id === sessionId || 
-              sale.stripe_payment_intent_id === verifyData.stripe_payment_intent_id
-            );
-            
-            if (!existingSession) {
-              const uniqueId = Date.now();
-              const saleForStorage = {
-                id: uniqueId.toString(),
-                ticket_id: uniqueId,
-                date: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-                products: verifyData.cart_data,
-                items: verifyData.cart_data.map((item: any) => ({
-                  id: item.id,
-                  name: item.name || 'Producto',
-                  price: Number(item.price) || 0,
-                  original_price: Number(item.original_price) || Number(item.price) || 0,
-                  quantity: Number(item.quantity) || 1,
-                  total: Number(item.price) * Number(item.quantity)
-                })),
-                total: Number(verifyData.total) || 0,
-                subtotal: Number(verifyData.total) || 0,
-                payment_method: 'stripe',
-                payment_status: 'completed',
-                status: 'completed',
-                user_id: session.user.id,
-                stripe_payment_intent_id: verifyData.stripe_payment_intent_id,
-                session_id: sessionId
-              };
-              
-              // Guardar en localStorage
-              existingSales.push(saleForStorage);
-              localStorage.setItem('sales', JSON.stringify(existingSales));
-              
-              console.log('✅ PaymentSuccess: Venta guardada en localStorage:', saleForStorage);
-              console.log('📊 PaymentSuccess: Total de ventas ahora:', existingSales.length);
-            } else {
-              console.log('⚠️ PaymentSuccess: Venta ya existe, evitando duplicado:', existingSession.id);
-            }
-          }
+          console.log('✅ PaymentSuccess: Pago verificado, redirigiendo con éxito...');
           
           // Redirigir con flag de pago exitoso
-          router.replace('/?payment=success&session_id=' + sessionId);
+          router.replace('/?payment=success');
           return;
         } else {
           console.warn('⚠️ PaymentSuccess: Verificación falló, redirigiendo de todas formas...');

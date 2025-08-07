@@ -13,6 +13,7 @@ import EditProductModal from '../components/EditProductModal';
 import { useCart } from '../hooks/useCart';
 import { createSale } from '../lib/sales';
 import { supabase } from '../lib/supabaseClient';
+import UserSettingsManager from '../lib/userSettings';
 import { verifyDatabase } from '../lib/databaseDiagnostic';
 import { AddProductForm } from '../components/AddProductForm';
 import { CategoryFilter } from '../components/CategoryFilter';
@@ -25,6 +26,7 @@ import { DatabaseStatus } from '../components/DatabaseStatus';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { StripeConfigManager } from '../lib/stripe-config';
 import { User } from '@supabase/supabase-js';
+import { useTheme } from '../contexts/ThemeContext';
 
 
 
@@ -132,7 +134,17 @@ function openEditProduct(product: Product) {
   // ...hooks y utilidades...
 
   // ...hooks y utilidades...
-  // Estados principales que se usan en hooks/utilidades
+  // Función para recargar productos manualmente
+  const handleManualReload = async () => {
+    console.log('🔄 Recarga manual solicitada por usuario');
+    try {
+      await fetchProducts();
+      setIsInitialLoad(false); // Salir de la pantalla de carga
+    } catch (error) {
+      console.error('❌ Error en recarga manual:', error);
+      setToast({ type: 'error', message: 'Error al recargar productos. Intenta de nuevo.' });
+    }
+  };
 type User = { id: string; email?: string };
 const [user, setUser] = useState<User | null>(null);
 const [showVerificationSuccess, setShowVerificationSuccess] = useState(false);
@@ -153,31 +165,195 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
 
     // Verificar si el usuario regresa después de un pago exitoso
     if (urlParams.get('payment') === 'success') {
-      // Recuperar datos del carrito guardados antes del pago
-      const prePaymentCart = localStorage.getItem('pre_payment_cart');
-      const prePaymentTotal = localStorage.getItem('pre_payment_total');
+      const sessionId = urlParams.get('session_id');
       
-      if (prePaymentCart && prePaymentTotal) {
-        const cartData = JSON.parse(prePaymentCart);
-        const totalAmount = parseFloat(prePaymentTotal);
+      if (currentUser && sessionId) {
+        // Crear función async dentro del useEffect
+        const handlePaymentSuccess = async () => {
+          console.log('🚀 ===== PROCESANDO PAGO EXITOSO DESDE URL =====');
+          console.log('🔍 Session ID:', sessionId);
+          console.log('🔍 User ID:', currentUser?.id);
+          
+          try {
+            // PASO 1: INTENTAR RECUPERAR DESDE LOCALSTORAGE PRIMERO
+            console.log('💾 Buscando datos del pago en localStorage...');
+            const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
+            console.log('💾 Ventas en localStorage:', localSales.length);
+            
+            // Buscar la venta específica por session_id primero, luego la más reciente
+            let targetSale = null;
+            
+            if (sessionId) {
+              targetSale = localSales.find((sale: any) => sale.session_id === sessionId);
+              console.log('🔍 Buscando por session_id:', sessionId, 'Encontrada:', !!targetSale);
+            }
+            
+            // Si no encontramos por session_id, tomar la más reciente
+            if (!targetSale && localSales.length > 0) {
+              targetSale = localSales[localSales.length - 1];
+              console.log('🔍 Tomando venta más reciente:', targetSale.id);
+            }
+            
+            if (targetSale && targetSale.products && targetSale.products.length > 0) {
+              console.log('✅ Datos encontrados en localStorage:', targetSale);
+              
+              // Crear ticket desde localStorage con validación de datos
+              const ticketData = {
+                ticket_id: Number(targetSale.ticket_id) || Number(targetSale.id) || Date.now(),
+                id: targetSale.id?.toString() || Date.now().toString(),
+                date: targetSale.date ? new Date(targetSale.date) : new Date(),
+                created_at: targetSale.created_at || new Date().toISOString(),
+                products: targetSale.products || [],
+                items: (targetSale.items || targetSale.products || []).map((item: any) => ({
+                  id: item.id || 'unknown',
+                  name: item.name || 'Producto',
+                  price: Number(item.price) || 0,
+                  original_price: Number(item.original_price) || Number(item.price) || 0,
+                  quantity: Number(item.quantity) || 1
+                })),
+                total: Number(targetSale.total) || 0
+              };
+              
+              console.log('🎫 TICKET CREADO CON DATOS COMPLETOS:');
+              console.log('- ID:', ticketData.id);
+              console.log('- Total:', ticketData.total);
+              console.log('- Productos:', ticketData.products.length);
+              console.log('- Items:', ticketData.items.length);
+              
+              setTicket(ticketData);
+              console.log('🎫 Ticket creado desde localStorage:', ticketData);
+              
+              // Actualizar reportes locales
+              const totalVentas = localSales.reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
+              const cantidadTickets = localSales.length;
+              const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
+              
+              // Calcular ventas del día y del mes
+              const today = new Date();
+              const todayStr = today.toISOString().split('T')[0];
+              const currentMonth = today.getMonth();
+              const currentYear = today.getFullYear();
+              
+              const ventasDelDia = localSales
+                .filter((sale: any) => {
+                  const saleDate = new Date(sale.timestamp || sale.date).toISOString().split('T')[0];
+                  return saleDate === todayStr;
+                })
+                .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
+              
+              const ventasDelMes = localSales
+                .filter((sale: any) => {
+                  const saleDate = new Date(sale.timestamp || sale.date);
+                  return saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear;
+                })
+                .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
+              
+              setReportes({ totalVentas, cantidadTickets, promedio, ventasDelDia, ventasDelMes });
+              
+              // Disparar actualización del historial
+              setSalesRefreshTrigger(prev => prev + 1);
+              
+              return;
+            }
+            
+            // PASO 2: SI NO HAY DATOS EN LOCALSTORAGE, INTENTAR SUPABASE (FALLBACK)
+            console.log('🔄 No hay datos recientes en localStorage, intentando Supabase...');
+            const paymentSession = await UserSettingsManager.getPaymentSession(currentUser.id, sessionId);
+            
+            if (paymentSession && paymentSession.cart_data && paymentSession.total_amount) {
+              const cartData = paymentSession.cart_data;
+              const totalAmount = paymentSession.total_amount;
+              
+              console.log('✅ Datos recuperados de Supabase:', { cartData, totalAmount });
+              
+              // Crear el ticket con los datos reales del pago
+              const ticketId = Date.now();
+              const ticketData = {
+                ticket_id: ticketId,
+                id: ticketId.toString(),
+                date: new Date(),
+                created_at: new Date().toISOString(),
+                products: cartData,
+                items: cartData.map((item: any) => ({
+                  id: item.id,
+                  name: item.name || 'Producto',
+                  price: Number(item.price) || 0,
+                  quantity: Number(item.quantity) || 1
+                })),
+                total: totalAmount,
+              };
+              
+              setTicket(ticketData);
+              
+              // GUARDAR EN LOCALSTORAGE PARA FUTURAS REFERENCIAS
+              const saleForStorage = {
+                id: ticketId.toString(),
+                ticket_id: ticketId,
+                date: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+                products: cartData,
+                items: cartData,
+                total: totalAmount,
+                payment_method: 'stripe',
+                payment_status: 'completed',
+                status: 'completed',
+                user_id: currentUser.id
+              };
+              
+              const existingSales = JSON.parse(localStorage.getItem('sales') || '[]');
+              existingSales.push(saleForStorage);
+              localStorage.setItem('sales', JSON.stringify(existingSales));
+              console.log('💾 Venta guardada en localStorage desde Supabase');
+              
+              console.log('✅ Ticket creado con total desde Supabase:', totalAmount);
+            } else {
+              console.warn('⚠️ No se encontraron datos de pago en ningún lado para session:', sessionId);
+              
+              // PASO 3: FALLBACK COMPLETO - CREAR TICKET VACÍO
+              const ticketId = Date.now();
+              setTicket({
+                ticket_id: ticketId,
+                id: ticketId.toString(),
+                date: new Date(),
+                created_at: new Date().toISOString(),
+                products: [],
+                items: [],
+                total: 0,
+              });
+              console.log('⚠️ Ticket creado vacío como último recurso');
+            }
+          } catch (error) {
+            console.error('❌ Error al recuperar sesión de pago:', error);
+            
+            // FALLBACK DE EMERGENCIA
+            const ticketId = Date.now();
+            setTicket({
+              ticket_id: ticketId,
+              id: ticketId.toString(),
+              date: new Date(),
+              created_at: new Date().toISOString(),
+              products: [],
+              items: [],
+              total: 0,
+            });
+          }
+        };
         
-        // Crear el ticket con los datos reales del pago
-        const ticketId = Math.floor(Math.random() * 100000);
-        setTicket({
-          ticket_id: ticketId,
-          date: new Date(),
-          products: cartData,
-          total: totalAmount,
-        });
+        handlePaymentSuccess();
         
-        // Limpiar datos temporales del localStorage
-        localStorage.removeItem('pre_payment_cart');
-        localStorage.removeItem('pre_payment_total');
+        // Limpiar la URL después de procesar el pago
+        setTimeout(() => {
+          window.history.replaceState({}, '', window.location.pathname);
+        }, 1000);
       } else {
-        // Fallback si no hay datos guardados
+        console.warn('⚠️ Usuario no autenticado o sessionId no encontrado');
+        console.warn('⚠️ currentUser:', currentUser);
+        console.warn('⚠️ sessionId:', sessionId);
+        
         const ticketId = Math.floor(Math.random() * 100000);
         setTicket({
           ticket_id: ticketId,
+          id: ticketId.toString(),
           date: new Date(),
           products: [],
           total: 0,
@@ -190,6 +366,16 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       
       // 🔄 REFRESCAR HISTORIAL DE VENTAS DESPUÉS DEL PAGO
       setSalesRefreshTrigger(prev => prev + 1);
+      
+      // También recargar las ventas para reportes si estamos en esa vista
+      if (view === 'reports' || view === 'stats') {
+        // Forzar recarga de ventas para actualizar reportes
+        setTimeout(() => {
+          if (user) {
+            setView(view); // Trigger re-render de la vista actual
+          }
+        }, 500);
+      }
       
       // Limpiar el parámetro de la URL
       window.history.replaceState({}, '', window.location.pathname);
@@ -212,67 +398,150 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
     };
   }, []);
   const [view, setView] = useState<ViewType>('home');
-  const [reportes, setReportes] = useState<{ totalVentas: number; cantidadTickets: number; promedio: number } | null>(null);
+  const [reportes, setReportes] = useState<{ 
+    totalVentas: number; 
+    cantidadTickets: number; 
+    promedio: number;
+    ventasDelDia: number;
+    ventasDelMes: number;
+  } | null>(null);
 
-  // Lógica para reportes y ventas
-const [ventas, setVentas] = useState<Sale[]>([]);
+  // Lógica para reportes y ventas (sistema híbrido Supabase + localStorage)
+  const [ventas, setVentas] = useState<Sale[]>([]);
   useEffect(() => {
-    if (user) {
+    if (view === 'sales' || view === 'reports') {
       (async () => {
-        const { data, error } = await supabase
-          .from('sales')
-          .select('id, total, products, items, subtotal, created_at, ticket_id')
-          .eq('user_id', user.id);
-        if (!error && data) {
-          type DBVenta = { 
-            id: string; 
-            user_id?: string; 
-            products?: SaleProduct[]; 
-            items?: SaleProduct[];
-            total?: number; 
-            subtotal?: number;
-            created_at?: string; 
-            ticket_id?: string 
-          };
-          setVentas(
-            (data as DBVenta[]).map((sale) => ({
+        let allSales: any[] = [];
+        
+        // PASO 1: Cargar desde Supabase si hay usuario autenticado
+        if (user) {
+          const { data, error } = await supabase
+            .from('sales')
+            .select('id, total, products, items, subtotal, created_at, ticket_id')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+            
+          if (!error && data) {
+            console.log('📊 Ventas cargadas desde Supabase:', data.length);
+            allSales = data.map((sale) => ({
               id: sale.id,
-              user_id: sale.user_id ?? '',
+              user_id: user.id,
               products: sale.products ?? [],
-              items: sale.items ?? sale.products ?? [], // Usar items o products como fallback
+              items: sale.items ?? sale.products ?? [],
               total: sale.total ?? 0,
               subtotal: sale.subtotal ?? sale.total ?? 0,
               created_at: sale.created_at ?? '',
-              ticket_id: sale.ticket_id
-            }))
-          );
-          if (view === 'reports') {
-            const totalVentas = (data as DBVenta[]).reduce((sum: number, sale) => sum + (sale.total || 0), 0);
-            const cantidadTickets = data.length;
-            const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
-            setReportes({ totalVentas, cantidadTickets, promedio });
+              ticket_id: sale.ticket_id,
+              source: 'supabase'
+            }));
+          } else if (error) {
+            console.error('❌ Error cargando desde Supabase:', error);
           }
-        } else {
-          setVentas([]);
-          setReportes(null);
+        }
+
+        // PASO 2: Cargar también desde localStorage (como respaldo y datos adicionales)
+        try {
+          const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
+          console.log('💾 Ventas cargadas desde localStorage:', localSales.length);
+          
+          // Agregar ventas de localStorage que no estén ya en Supabase
+          const supabaseIds = allSales.map(sale => sale.id);
+          const localOnlySales = localSales
+            .filter((localSale: any) => !supabaseIds.includes(localSale.id))
+            .map((localSale: any) => ({
+              ...localSale,
+              source: 'localStorage'
+            }));
+          
+          console.log('💾 Ventas únicas de localStorage:', localOnlySales.length);
+          allSales = [...allSales, ...localOnlySales];
+        } catch (error) {
+          console.warn('⚠️ Error leyendo localStorage:', error);
+        }
+
+        // PASO 3: Ordenar por fecha (más recientes primero)
+        allSales.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        
+        console.log('📊 TOTAL VENTAS COMBINADAS:', allSales.length);
+        console.log('📊 Desglose por fuente:', {
+          supabase: allSales.filter(s => s.source === 'supabase').length,
+          localStorage: allSales.filter(s => s.source === 'localStorage').length
+        });
+
+        // Actualizar estado
+        setVentas(allSales);
+
+        // PASO 4: Calcular reportes combinados
+        if (view === 'reports' && allSales.length > 0) {
+          // Filtros de fecha
+          const today = new Date();
+          const todayStr = today.toISOString().split('T')[0];
+          const thisMonth = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+          
+          const totalVentas = allSales.reduce((sum: number, sale) => sum + (Number(sale.total) || 0), 0);
+          const cantidadTickets = allSales.length;
+          const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
+          
+          // Ventas del día
+          const ventasHoy = allSales.filter(sale => 
+            sale.created_at && sale.created_at.startsWith(todayStr)
+          );
+          const totalHoy = ventasHoy.reduce((sum: number, sale) => sum + (Number(sale.total) || 0), 0);
+          
+          // Ventas del mes
+          const ventasMes = allSales.filter(sale => 
+            sale.created_at && sale.created_at.startsWith(thisMonth)
+          );
+          const totalMes = ventasMes.reduce((sum: number, sale) => sum + (Number(sale.total) || 0), 0);
+          
+          console.log('📊 REPORTES CALCULADOS:');
+          console.log('- Total general:', totalVentas, 'USD');
+          console.log('- Total hoy:', totalHoy, 'USD');
+          console.log('- Total mes:', totalMes, 'USD');
+          console.log('- Tickets:', cantidadTickets);
+          console.log('- Promedio:', promedio.toFixed(2), 'USD');
+          
+          setReportes({ 
+            totalVentas, 
+            cantidadTickets, 
+            promedio,
+            ventasDelDia: totalHoy,
+            ventasDelMes: totalMes
+          });
+        } else if (view === 'reports') {
+          setReportes({ 
+            totalVentas: 0, 
+            cantidadTickets: 0, 
+            promedio: 0,
+            ventasDelDia: 0,
+            ventasDelMes: 0
+          });
         }
       })();
     }
-  }, [view, user]);
+  }, [view, user, salesRefreshTrigger]);
 
-  // Estado para el nombre del negocio editable
+  // Estado para el nombre del negocio editable - migrado a Supabase
   const [editingName, setEditingName] = useState(false);
-  const [businessName, setBusinessName] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('businessName') || 'Gestion de ventas V1';
-    }
-    return 'Gestion de ventas V1';
-  });
-  const saveBusinessName = (name: string) => {
+  const [businessName, setBusinessName] = useState('Gestion de ventas V1');
+  const [businessNameLoaded, setBusinessNameLoaded] = useState(false);
+  
+  useEffect(() => {
+    const loadBusinessName = async () => {
+      if (currentUser && !businessNameLoaded) {
+        const name = await UserSettingsManager.getBusinessName(currentUser.id);
+        setBusinessName(name);
+        setBusinessNameLoaded(true);
+      }
+    };
+    loadBusinessName();
+  }, [currentUser, businessNameLoaded]);
+  
+  const saveBusinessName = async (name: string) => {
     setEditingName(false);
     setBusinessName(name);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('businessName', name);
+    if (currentUser) {
+      await UserSettingsManager.setBusinessName(currentUser.id, name);
     }
   };
 
@@ -289,11 +558,16 @@ const [ventas, setVentas] = useState<Sale[]>([]);
 
   // Función que se ejecuta después de un pago exitoso con Stripe
   const handleStripePaymentSuccess = async () => {
+    console.log('🚀 ===== INICIANDO PROCESO POST-PAGO =====');
+    console.log('🛒 Cart data antes de procesar:', cart);
+    console.log('💰 Total antes de procesar:', total);
+    
     setPaying(true);
     
     try {
       // Generar ID del ticket
       const ticketId = Math.floor(Math.random() * 100000);
+      let saleData = null;
       
       // Guardar la venta en la base de datos si hay un usuario autenticado
       if (user && cart.length > 0) {
@@ -305,10 +579,24 @@ const [ventas, setVentas] = useState<Sale[]>([]);
           
           const { data, error } = await createSale(cart, total, user.id);
           
+          console.log('🔍 createSale RESULTADO COMPLETO:');
+          console.log('  - data:', data);
+          console.log('  - error:', error);
+          console.log('  - data tipo:', typeof data);
+          console.log('  - data es array?', Array.isArray(data));
+          console.log('  - data[0]:', data?.[0]);
+          
           if (error) {
             console.error('Error al guardar la venta:', error);
           } else {
             console.log('Venta guardada correctamente:', data);
+            saleData = data?.[0]; // Guardar los datos de la venta real
+            
+            console.log('🔍 saleData FINAL asignado:', saleData);
+            console.log('🔍 saleData.total:', saleData?.total);
+            console.log('🔍 saleData.items:', saleData?.items);
+            console.log('🔍 saleData.products:', saleData?.products);
+            
             // Disparar actualización del historial de ventas y reportes
             setSalesRefreshTrigger(prev => prev + 1);
             
@@ -324,7 +612,10 @@ const [ventas, setVentas] = useState<Sale[]>([]);
                   const totalVentas = salesData.reduce((sum, sale) => sum + (sale.total || 0), 0);
                   const cantidadTickets = salesData.length;
                   const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
-                  setReportes({ totalVentas, cantidadTickets, promedio });
+                  
+                  // Para este contexto usamos 0 por defecto ya que no calculamos día/mes aquí
+                  // Este setReportes se ejecuta después del pago, el sistema híbrido lo actualizará
+                  setReportes({ totalVentas, cantidadTickets, promedio, ventasDelDia: 0, ventasDelMes: 0 });
                 }
               } catch (reportError) {
                 console.warn('Error al actualizar reportes:', reportError);
@@ -340,15 +631,117 @@ const [ventas, setVentas] = useState<Sale[]>([]);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 1500);
       
-      // Crear el ticket visual
-      setTicket({
-        ticket_id: ticketId,
-        date: new Date(),
-        products: cart,
-        total,
-      });
+      // PASO ADICIONAL: GUARDAR EN LOCALSTORAGE COMO RESPALDO CONFIABLE
+      console.log('💾 GUARDANDO TAMBIÉN EN LOCALSTORAGE COMO RESPALDO...');
+      const saleForLocalStorage = {
+        id: Date.now().toString(),
+        ticket_id: Date.now(),
+        date: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        products: [...cart],
+        items: cart.map(item => ({
+          id: item.id,
+          name: item.name || 'Producto',
+          price: Number(item.price) || 0,
+          original_price: Number(item.original_price) || Number(item.price) || 0,
+          quantity: Number(item.quantity) || 1,
+          total: Number(item.price) * Number(item.quantity)
+        })),
+        total: Number(total) || 0,
+        subtotal: Number(total) || 0,
+        payment_method: 'stripe',
+        payment_status: 'completed',
+        status: 'completed',
+        user_id: user?.id || 'local-user'
+      };
       
-      clearCart();
+      // Guardar en localStorage
+      const existingSales = JSON.parse(localStorage.getItem('sales') || '[]');
+      existingSales.push(saleForLocalStorage);
+      localStorage.setItem('sales', JSON.stringify(existingSales));
+      console.log('✅ VENTA GUARDADA EN LOCALSTORAGE:', saleForLocalStorage);
+      
+      // Actualizar reportes desde localStorage
+      const allLocalSales = JSON.parse(localStorage.getItem('sales') || '[]');
+      const totalVentas = allLocalSales.reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
+      const cantidadTickets = allLocalSales.length;
+      const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
+      
+      // Calcular ventas del día y del mes
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+      
+      const ventasDelDia = allLocalSales
+        .filter((sale: any) => {
+          const saleDate = new Date(sale.timestamp || sale.date).toISOString().split('T')[0];
+          return saleDate === todayStr;
+        })
+        .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
+      
+      const ventasDelMes = allLocalSales
+        .filter((sale: any) => {
+          const saleDate = new Date(sale.timestamp || sale.date);
+          return saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear;
+        })
+        .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
+      
+      setReportes({ totalVentas, cantidadTickets, promedio, ventasDelDia, ventasDelMes });
+      
+      // CHECKPOINT FINAL: Crear el ticket visual con datos garantizados
+      console.log('🎫 INICIO CREACIÓN TICKET - Estado actual:');
+      console.log('  - Cart length:', cart.length);
+      console.log('  - Cart items:', cart.map(item => ({name: item.name, price: item.price, qty: item.quantity})));
+      console.log('  - Total calculado:', total);
+      console.log('  - saleData recibido:', saleData);
+      
+      // Verificar que el carrito no esté vacío antes de crear ticket
+      if (cart.length === 0) {
+        console.error('🚨 ERROR CRÍTICO: Carrito está vacío al crear ticket!');
+        console.error('  - Esto sugiere una condición de carrera o limpieza prematura');
+        return;
+      }
+      
+      if (total <= 0) {
+        console.error('🚨 ERROR CRÍTICO: Total es 0 al crear ticket!');
+        console.error('  - Total actual:', total);
+        console.error('  - Esto sugiere un problema en el cálculo');
+        return;
+      }
+      
+      const guaranteedTicketData = {
+        ticket_id: saleData?.id || ticketId,
+        id: saleData?.id || `local-${ticketId}`,
+        date: saleData?.created_at ? new Date(saleData.created_at) : new Date(),
+        products: [...cart], // Clone profundo del carrito
+        total: Number(total), // Total ya calculado y validado
+        created_at: saleData?.created_at || new Date().toISOString(),
+        items: cart.map(item => ({
+          id: item.id,
+          name: item.name || 'Producto',
+          price: Number(item.price) || 0,
+          original_price: Number(item.original_price) || Number(item.price) || 0,
+          quantity: Number(item.quantity) || 1
+        }))
+      };
+      
+      console.log('✅ TICKET CREADO EXITOSAMENTE:');
+      console.log('  - ticket_id:', guaranteedTicketData.ticket_id);
+      console.log('  - products count:', guaranteedTicketData.products.length);
+      console.log('  - items count:', guaranteedTicketData.items.length);
+      console.log('  - total:', guaranteedTicketData.total);
+      console.log('  - primer producto:', guaranteedTicketData.items[0]);
+      
+      setTicket(guaranteedTicketData);
+      
+      console.log('🎫 TICKET SETTEADO - Verificación final:');
+      console.log('  - setTicket() ejecutado con éxito');
+      console.log('  - Data enviada a setTicket:', guaranteedTicketData);
+      
+      // ⚠️ IMPORTANTE: Limpiar carrito DESPUÉS de mostrar el ticket, no inmediatamente
+      // clearCart(); // Comentado - se limpiará cuando el usuario cierre el ticket
+      
     } catch (error) {
       console.error('Error en el proceso post-pago:', error);
       setPaying(false);
@@ -358,25 +751,28 @@ const [ventas, setVentas] = useState<Sale[]>([]);
   // ...existing code...
 
   // ...existing code...
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'light' ? 'light' : 'dark';
-    }
-    return 'dark';
-  });
+  const { theme, setTheme, getThemeClass } = useTheme();
   // Resto de estados
-  const { products, loading, setProducts } = useProductsContext();
+  const { products, loading, setProducts, fetchProducts } = useProductsContext();
   const { categories } = useCategories();
   const [selectedCategory, setSelectedCategory] = useState('');
   const { cart, addToCart, removeFromCart, clearCart, updateQuantity } = useCart();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInitialLoad, setIsInitialLoad] = useState(true); // Estado para controlar la primera carga
-  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
-    if (typeof window !== 'undefined') {
-      return JSON.parse(localStorage.getItem('favoriteProducts') || '[]');
-    }
-    return [];
-  });
+  // Productos favoritos - migrado a Supabase
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [favoritesLoaded, setFavoritesLoaded] = useState(false);
+  
+  useEffect(() => {
+    const loadFavorites = async () => {
+      if (currentUser && !favoritesLoaded) {
+        const favorites = await UserSettingsManager.getFavoriteProducts(currentUser.id);
+        setFavoriteIds(favorites);
+        setFavoritesLoaded(true);
+      }
+    };
+    loadFavorites();
+  }, [currentUser, favoritesLoaded]);
   const [orderNote, setOrderNote] = useState('');
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discount, setDiscount] = useState<number>(0);
@@ -387,7 +783,21 @@ const subtotal = cart.reduce((sum: number, item: Product & { quantity: number })
   const total = Math.max(0, subtotal - discountValue);
   const [showStripePayment, setShowStripePayment] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(preSelectedClient);
-const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: string | Date; products: (Product & { quantity: number })[]; total: number } | null>(null);
+const [ticket, setTicket] = useState<{ 
+  ticket_id?: number; 
+  id?: string; 
+  date: string | Date; 
+  products: (Product & { quantity: number })[]; 
+  total: number;
+  created_at?: string;
+  items?: Array<{
+    id: string;
+    name: string;
+    price: number;
+    original_price?: number;
+    quantity: number;
+  }>;
+} | null>(null);
   const [paying, setPaying] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -399,9 +809,28 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
     }
   }, [loading, products]);
 
+  // Timeout automático para la pantalla de carga inicial
+  useEffect(() => {
+    if (isInitialLoad && loading) {
+      console.log('⏰ Iniciando timeout de 15 segundos para pantalla de carga');
+      const timeoutId = setTimeout(() => {
+        console.log('🚨 Timeout alcanzado - forzando salida de pantalla de carga');
+        setIsInitialLoad(false);
+        setToast({ 
+          type: 'error', 
+          message: 'La carga tomó demasiado tiempo. Usa el botón "Recargar productos" si es necesario.' 
+        });
+      }, 15000); // 15 segundos
+
+      return () => {
+        console.log('🔄 Limpiando timeout de pantalla de carga');
+        clearTimeout(timeoutId);
+      };
+    }
+  }, [isInitialLoad, loading]);
+
 
   // --- UTILIDADES VISUALES ---
-  const getThemeClass = useCallback((options: { dark: string; light: string }) => theme === 'dark' ? options.dark : options.light, [theme]);
   const bgMain = getThemeClass({ dark: 'bg-zinc-950', light: 'bg-white' });
   const textMain = getThemeClass({ dark: 'text-white', light: 'text-zinc-900' });
   const cardBg = getThemeClass({ dark: 'bg-zinc-900 border-zinc-800', light: 'bg-white border-zinc-200' });
@@ -486,6 +915,14 @@ const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: st
           <div className="flex justify-between items-center">
             <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ventas totales</span>
             <span className="text-2xl font-bold text-purple-500">{reportes ? formatCurrency(reportes.totalVentas) : '...'}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ventas del día</span>
+            <span className="text-2xl font-bold text-green-500">{reportes ? formatCurrency(reportes.ventasDelDia) : '...'}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ventas del mes</span>
+            <span className="text-2xl font-bold text-blue-500">{reportes ? formatCurrency(reportes.ventasDelMes) : '...'}</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="font-semibold text-zinc-700 dark:text-zinc-200">Cantidad de tickets</span>
@@ -614,7 +1051,7 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
               {favoritos.length === 0 ? (
                 <li className="text-zinc-400">No tienes productos favoritos.</li>
               ) : (
-favoritos.map((prod: Product) => (
+                favoritos.map((prod: Product) => (
                   <li key={prod.id} className="flex justify-between items-center">
                     <span className="font-semibold text-zinc-700 dark:text-zinc-200">{prod.name}</span>
                     <button onClick={() => addToCart(prod)} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-bold">Agregar</button>
@@ -684,6 +1121,24 @@ favoritos.map((prod: Product) => (
             </p>
             <p className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'} max-w-md text-center`}>
               Por favor espera mientras obtenemos el menú desde la base de datos
+            </p>
+            
+            {/* Botón de recargar manual después de 8 segundos */}
+            <div className="mt-8">
+              <button
+                onClick={handleManualReload}
+                className={`px-6 py-3 rounded-lg transition-all duration-200 ${
+                  theme === 'dark' 
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-500' 
+                    : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+                } border-2`}
+              >
+                🔄 Recargar productos
+              </button>
+            </div>
+            
+            <p className={`text-xs ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'} text-center max-w-sm`}>
+              Si la carga toma demasiado tiempo, haz clic en "Recargar productos"
             </p>
           </div>
         </div>
@@ -813,14 +1268,16 @@ favoritos.map((prod: Product) => (
                         {/* Botón favorito */}
                         <button
                           className={`absolute top-2 right-2 z-10 text-2xl ${favoriteIds.includes(product.id) ? 'text-yellow-400' : 'text-zinc-400 hover:text-yellow-400'} transition-colors focus:ring-2 focus:ring-yellow-400`}
-                          onClick={() => {
-                            setFavoriteIds(favs => {
-                              const updated = favs.includes(product.id)
-                                ? favs.filter(id => id !== product.id)
-                                : [...favs, product.id];
-                              localStorage.setItem('favoriteProducts', JSON.stringify(updated));
-                              return updated;
-                            });
+                          onClick={async () => {
+                            const updated = favoriteIds.includes(product.id)
+                              ? favoriteIds.filter(id => id !== product.id)
+                              : [...favoriteIds, product.id];
+                            
+                            setFavoriteIds(updated);
+                            
+                            if (currentUser) {
+                              await UserSettingsManager.setFavoriteProducts(currentUser.id, updated);
+                            }
                           }}
                           aria-label="Favorito"
                           tabIndex={0}
@@ -1000,59 +1457,190 @@ favoritos.map((prod: Product) => (
             description: item.category || undefined
           }))}
           onClose={() => setShowStripePayment(false)}
+          onSuccess={() => {
+            console.log('💳 Pago de Stripe exitoso - NO limpiando carrito aún (se limpiará al cerrar ticket)');
+            console.log('📌 Carrito actual tras pago exitoso:', cart.length, 'items');
+            setShowStripePayment(false);
+            // NO llamar clearCart() aquí - el ticket necesita estos datos
+            // clearCart() se ejecutará cuando el usuario cierre el ticket
+          }}
           selectedClient={selectedClient}
         />
       )}
-      {/* Ticket visual */}
+      {/* Ticket visual mejorado */}
       {ticket && (
-        <div className={`fixed inset-0 ${overlayBg} z-[100] flex items-center justify-center print:bg-transparent print:relative print:inset-0 transition-colors`}>
-          <div className={`ticket-print-area ${modalBg} ${cardShadow} border ${modalBorder} rounded-lg p-8 w-96 mx-auto relative print:shadow-none print:bg-white print:text-black transition-colors`}>
-            <button className="absolute top-3 right-3 text-zinc-400 hover:text-black print:hidden" onClick={() => setTicket(null)}>×</button>
-            <h2 className="text-xl font-bold mb-2 text-center">Ticket #{ticket.ticket_id || ticket.id}</h2>
-            <div className="mb-2 text-center text-zinc-500 text-sm">{new Date(ticket.date).toLocaleString('es-ES')}</div>
-            <div className="mb-4">
-{ticket.products.map((item: Product & { quantity: number }) => (
-                <div key={item.id} className="flex justify-between">
-                  <span>{item.name} x{item.quantity}</span>
-                  <span>&quot;${(item.price * item.quantity).toFixed(2)}&quot;</span>
+        <div className={`fixed inset-0 z-[100] flex items-center justify-center print:bg-transparent print:relative print:inset-0 transition-colors ${getThemeClass({dark: 'bg-black/50', light: 'bg-black/50'})}`}>
+          <div className={`ticket-print-area rounded-2xl shadow-2xl max-w-sm w-full mx-4 relative print:shadow-none print:bg-white print:text-black transition-colors ${getThemeClass({
+            dark: 'bg-zinc-900 text-white',
+            light: 'bg-white text-gray-900'
+          })}`}>
+            <button 
+              className={`absolute top-4 right-4 text-2xl font-bold z-10 print:hidden transition-colors ${getThemeClass({
+                dark: 'text-gray-400 hover:text-white',
+                light: 'text-gray-600 hover:text-gray-900'
+              })}`}
+              onClick={() => {
+                setTicket(null);
+                clearCart(); // Limpiar carrito cuando se cierra el ticket
+              }}
+            >
+              ×
+            </button>
+            
+            {/* Ticket profesional */}
+            <div className="p-8">
+              {/* Header del negocio */}
+              <div className="text-center mb-6">
+                <h2 className={`text-2xl font-bold mb-1 ${getThemeClass({dark: 'text-white', light: 'text-gray-800'})}`}>
+                  {businessName}
+                </h2>
+                <div className={`text-sm ${getThemeClass({dark: 'text-gray-400', light: 'text-gray-500'})}`}>
+                  Sistema de Gestión de Ventas
                 </div>
-              ))}
-            </div>
-            <div className="flex justify-between font-bold text-lg border-t pt-2">
-              <span>Total</span>
-              <span>&quot;${ticket.total.toFixed(2)}&quot;</span>
-            </div>
-            <div className="mt-6 flex justify-center print:hidden">
-              <button
-                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow transition-colors"
-                onClick={() => {
-                  const ticketDiv = document.querySelector('.ticket-print-area');
-                  if (!ticketDiv) return window.print();
-                  const printWindow = window.open('', '', 'width=400,height=600');
-                  if (!printWindow) return window.print();
-                  printWindow.document.write(`
-                    <html>
-                      <head>
-                        <title>Ticket</title>
-                        <style>
-                          body { font-family: sans-serif; margin: 0; padding: 0; background: #fff; color: #222; }
-                          .ticket { max-width: 350px; margin: 0 auto; padding: 24px; border-radius: 16px; border: 1px solid #eee; box-shadow: 0 2px 8px #0001; }
-                          .ticket h2 { text-align: center; margin-bottom: 8px; }
-                          .ticket .productos { margin-bottom: 12px; }
-                          .ticket .productos div { display: flex; justify-content: space-between; }
-                          .ticket .total { border-top: 1px solid #ddd; margin-top: 12px; padding-top: 8px; font-weight: bold; display: flex; justify-content: space-between; }
-                          .ticket .fecha { text-align: center; color: #888; font-size: 13px; margin-bottom: 10px; }
-                        </style>
-                      </head>
-                      <body onload="window.print();window.close();">
-                        <div class="ticket">
-                          ${ticketDiv.innerHTML}
+                <div className={`text-xs ${getThemeClass({dark: 'text-gray-500', light: 'text-gray-400'})}`}>
+                  Av. Principal 123, Ciudad
+                </div>
+                <div className={`text-xs ${getThemeClass({dark: 'text-gray-500', light: 'text-gray-400'})}`}>
+                  Tel. (555) 123-4567
+                </div>
+              </div>
+              
+              {/* Línea separadora */}
+              <div className={`border-t-2 border-dashed my-4 ${getThemeClass({dark: 'border-gray-600', light: 'border-gray-300'})}`}></div>
+              
+              {/* Info del ticket */}
+              <div className="text-center mb-6">
+                <h3 className={`text-xl font-bold mb-2 ${getThemeClass({dark: 'text-white', light: 'text-gray-800'})}`}>
+                  TICKET DE VENTA
+                </h3>
+                <div className={`text-lg font-mono ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-700'})}`}>
+                  #{ticket.ticket_id || ticket.id}
+                </div>
+                <div className={`text-sm mt-1 ${getThemeClass({dark: 'text-gray-400', light: 'text-gray-500'})}`}>
+                  {new Date(ticket.date).toLocaleString()}
+                </div>
+                <div className={`text-xs mt-1 ${getThemeClass({dark: 'text-gray-500', light: 'text-gray-400'})}`}>
+                  Cajero: {currentUser?.email || 'Sistema'}
+                </div>
+              </div>
+              
+              {/* Productos */}
+              <div className="mb-6">
+                <h4 className={`font-bold mb-3 pb-1 border-b ${getThemeClass({
+                  dark: 'text-white border-gray-600',
+                  light: 'text-gray-800 border-gray-200'
+                })}`}>
+                  PRODUCTOS
+                </h4>
+                <div className="space-y-2">
+                  {(ticket.items || ticket.products).map((item: any, index: number) => {
+                    const itemTotal = item.price * item.quantity;
+                    const hasDiscount = item.original_price && item.original_price > item.price;
+                    const originalTotal = (item.original_price || item.price) * item.quantity;
+                    
+                    return (
+                      <div key={index} className="space-y-1">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className={`font-medium ${getThemeClass({dark: 'text-white', light: 'text-gray-800'})}`}>
+                              {item.name || 'Producto'}
+                            </div>
+                            <div className={`text-xs ${getThemeClass({dark: 'text-gray-400', light: 'text-gray-500'})}`}>
+                              {hasDiscount ? (
+                                <>
+                                  <span className="line-through mr-2">
+                                    ${item.original_price?.toFixed(2)} x {item.quantity}
+                                  </span>
+                                  <span className="text-green-500 font-medium">
+                                    ${item.price.toFixed(2)} x {item.quantity}
+                                  </span>
+                                </>
+                              ) : (
+                                `$${item.price.toFixed(2)} x ${item.quantity}`
+                              )}
+                            </div>
+                            {hasDiscount && (
+                              <div className="text-xs text-green-500 font-medium">
+                                ¡DESCUENTO APLICADO! Ahorro: ${(originalTotal - itemTotal).toFixed(2)}
+                              </div>
+                            )}
+                          </div>
+                          <div className={`font-bold ml-4 ${getThemeClass({dark: 'text-white', light: 'text-gray-800'})}`}>
+                            ${itemTotal.toFixed(2)}
+                          </div>
                         </div>
-                      </body>
-                    </html>
-                  `);
-                  printWindow.document.close();
-                }}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              
+              {/* Línea separadora */}
+              <div className={`border-t-2 border-dashed my-4 ${getThemeClass({dark: 'border-gray-600', light: 'border-gray-300'})}`}></div>
+              
+              {/* Cálculos del total */}
+              <div className="mb-6">
+                {(() => {
+                  const items = ticket.items || ticket.products;
+                  const subtotal = items.reduce((sum: number, item: any) => {
+                    const originalPrice = item.original_price || item.price;
+                    return sum + (originalPrice * item.quantity);
+                  }, 0);
+                  const totalDescuento = subtotal - ticket.total;
+                  const hasGlobalDiscount = totalDescuento > 0.01; // Tolerancia por redondeo
+
+                  return (
+                    <div className="space-y-2">
+                      {hasGlobalDiscount && (
+                        <>
+                          <div className="flex justify-between text-sm">
+                            <span className={getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}>Subtotal:</span>
+                            <span className={getThemeClass({dark: 'text-white', light: 'text-gray-800'})}>
+                              ${subtotal.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span>Descuento aplicado:</span>
+                            <span>-${totalDescuento.toFixed(2)}</span>
+                          </div>
+                          <div className={`border-t pt-2 ${getThemeClass({dark: 'border-gray-600', light: 'border-gray-300'})}`}>
+                            <div className="flex justify-between items-center text-2xl font-bold">
+                              <span className={getThemeClass({dark: 'text-white', light: 'text-gray-800'})}>
+                                TOTAL A PAGAR:
+                              </span>
+                              <span className="text-green-600">${ticket.total.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      {!hasGlobalDiscount && (
+                        <div className="flex justify-between items-center text-2xl font-bold">
+                          <span className={getThemeClass({dark: 'text-white', light: 'text-gray-800'})}>
+                            TOTAL A PAGAR:
+                          </span>
+                          <span className="text-green-600">${ticket.total.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+              
+              {/* Footer */}
+              <div className={`text-center text-xs space-y-1 ${getThemeClass({dark: 'text-gray-500', light: 'text-gray-400'})}`}>
+                <div>¡Gracias por su compra!</div>
+                <div>Conserve este ticket como comprobante</div>
+                <div className={`mt-3 pt-2 border-t ${getThemeClass({dark: 'border-gray-600', light: 'border-gray-200'})}`}>
+                  Powered by {businessName} - POS v1.0
+                </div>
+              </div>
+            </div>
+            
+            {/* Botón imprimir */}
+            <div className="px-8 pb-6">
+              <button
+                onClick={() => window.print()}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-colors print:hidden"
               >
                 Imprimir ticket
               </button>
@@ -1060,27 +1648,28 @@ favoritos.map((prod: Product) => (
           </div>
         </div>
       )}
+      
       {/* Animación de éxito */}
       {success && (
         <div className="fixed inset-0 flex items-center justify-center z-[110] pointer-events-none">
           <div className="text-7xl animate-bounce">🎉</div>
         </div>
       )}
+      
       {/* Animación al agregar producto */}
       {showAddAnim && (
         <div className="fixed inset-0 flex items-end justify-center z-[120] pointer-events-none">
           <div className="mb-32 text-6xl animate-bounce">🛒</div>
         </div>
       )}
-      {/* ...existing code... */}
     </main>
   </>);
 }
 
-// Export por defecto para la página normal
-export default function Home() {
-  return <HomeComponent />;
-}
+// Export por defecto
+export default HomeComponent;
 
-// Export nombrado para usar desde rutas de cliente específico
+// Export named también para compatibilidad
 export { HomeComponent };
+
+

@@ -18,6 +18,29 @@ export async function createSale(
     console.log('- ClientID recibido:', clientId);
     console.log('- StripeID recibido:', stripePaymentIntentId);
     
+    // Verificar si ya existe una venta con este payment_intent_id para prevenir duplicados
+    if (stripePaymentIntentId) {
+      console.log('🔍 Verificando duplicados por stripe_payment_intent_id:', stripePaymentIntentId);
+      const { data: existingSale, error: checkError } = await supabase
+        .from('sales')
+        .select('id, stripe_payment_intent_id')
+        .eq('stripe_payment_intent_id', stripePaymentIntentId)
+        .limit(1);
+      
+      if (checkError) {
+        console.warn('⚠️ Error verificando duplicados:', checkError);
+      } else if (existingSale && existingSale.length > 0) {
+        console.warn('⚠️ Ya existe una venta con este payment_intent_id:', existingSale[0].id);
+        return {
+          data: existingSale,
+          error: null,
+          message: 'Venta ya procesada anteriormente'
+        };
+      } else {
+        console.log('✅ No se encontraron duplicados, procediendo con la creación');
+      }
+    }
+    
     // Validar datos de entrada
     if (!cart || cart.length === 0) {
       throw new Error('El carrito está vacío');
@@ -42,6 +65,13 @@ export async function createSale(
     }));
     
     console.log('Guardando venta:', { userId, items, total });
+    
+    // 🔍 DEBUG: Verificar datos antes de insertar
+    console.log('📊 DEBUG createSale - Datos de entrada:');
+    console.log('- userId:', userId, '(tipo:', typeof userId, ')');
+    console.log('- cart.length:', cart.length);
+    console.log('- total:', total, '(tipo:', typeof total, ')');
+    console.log('- items procesados:', items);
     
     // Preparar el objeto de inserción según la estructura real de tu tabla
     const saleData = {
@@ -157,6 +187,16 @@ export async function createSale(
     }
     
     console.log('Venta creada exitosamente:', data);
+    
+    // 🎉 DEBUG: Confirmar datos guardados
+    console.log('✅ VENTA GUARDADA EXITOSAMENTE:');
+    console.log('- ID de venta:', data?.[0]?.id);
+    console.log('- User ID guardado:', data?.[0]?.user_id);
+    console.log('- Total guardado:', data?.[0]?.total);
+    console.log('- Stripe Payment Intent:', data?.[0]?.stripe_payment_intent_id);
+    console.log('- Productos guardados:', data?.[0]?.products?.length || 0);
+    console.log('- Fecha creación:', data?.[0]?.created_at);
+    
     return { data, error: null };
     
   } catch (err) {
