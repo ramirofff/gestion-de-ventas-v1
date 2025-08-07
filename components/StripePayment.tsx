@@ -44,9 +44,9 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
 
       setPaymentUrl(data.payment_url);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating payment link:', err);
-      setError(err.message || 'Error al procesar el pago');
+      setError((err as Error).message || 'Error al procesar el pago');
     } finally {
       setLoading(false);
     }

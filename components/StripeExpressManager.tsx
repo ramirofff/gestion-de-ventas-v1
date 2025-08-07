@@ -60,8 +60,8 @@ export default function StripeExpressManager({ onAccountReady }: StripeExpressMa
         setError('Por favor completa el proceso de onboarding en la nueva ventana. Luego haz clic en "Verificar Estado".');
       }
 
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -92,8 +92,8 @@ export default function StripeExpressManager({ onAccountReady }: StripeExpressMa
         onAccountReady?.(accountId);
       }
 
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }

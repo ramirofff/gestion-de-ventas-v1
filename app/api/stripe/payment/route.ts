@@ -27,7 +27,12 @@ export async function POST(request: NextRequest) {
     const defaultCancelUrl = `${request.nextUrl.origin}/payment/cancel`;
 
     // Crear líneas de productos para Stripe
-    const lineItems = items.map((item: any) => ({
+    const lineItems = items.map((item: {
+      name: string;
+      price: number;
+      quantity: number;
+      description?: string;
+    }) => ({
       price_data: {
         currency: currency,
         product_data: {
@@ -79,10 +84,10 @@ export async function POST(request: NextRequest) {
       currency: currency.toUpperCase(),
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating payment link:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create payment link' },
+      { error: (error as Error).message || 'Failed to create payment link' },
       { status: 500 }
     );
   }

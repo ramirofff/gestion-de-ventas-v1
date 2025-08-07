@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe, STRIPE_EXPRESS_CONFIG } from '../../../../../lib/stripe-server';
+import { stripe } from '../../../../../lib/stripe-server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,10 +41,10 @@ export async function POST(request: NextRequest) {
       account: account
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating Stripe Express account:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create Express account' },
+      { error: (error as Error).message || 'Failed to create Express account' },
       { status: 500 }
     );
   }

@@ -31,10 +31,10 @@ export async function POST(request: NextRequest) {
       payment_intent_id: paymentIntent.id,
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating payment intent:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create payment intent' },
+      { error: (error as Error).message || 'Failed to create payment intent' },
       { status: 500 }
     );
   }

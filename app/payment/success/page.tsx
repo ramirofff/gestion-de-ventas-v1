@@ -6,7 +6,12 @@ import { useSearchParams } from 'next/navigation';
 export default function PaymentSuccess() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
-  const [paymentData, setPaymentData] = useState<any>(null);
+  const [paymentData, setPaymentData] = useState<{
+    sessionId: string;
+    amount: string;
+    currency: string;
+    status: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

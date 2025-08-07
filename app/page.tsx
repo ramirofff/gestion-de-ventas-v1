@@ -9,7 +9,7 @@ import { Boxes, ListOrdered, ShoppingCart, CheckCircle2, BarChart2, PieChart, Za
 
 import { useProductsContext } from '../components/ProductsProvider';
 import { ProductCard } from '../components/ProductCard';
-import EditProductModal from '@/components/EditProductModal';
+import EditProductModal from '../components/EditProductModal';
 import { useCart } from '../hooks/useCart';
 import { createSale } from '../lib/sales';
 import { supabase } from '../lib/supabaseClient';

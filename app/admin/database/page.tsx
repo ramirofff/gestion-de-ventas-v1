@@ -20,9 +20,9 @@ export default function ClearDatabasePage() {
         await supabase.rpc('set_constraints_immediate');
         
         alert('Datos borrados correctamente');
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Error al limpiar la base de datos:', error);
-        alert(`Error al limpiar la base de datos: ${error.message || 'Error desconocido'}`);
+        alert(`Error al limpiar la base de datos: ${(error as Error).message || 'Error desconocido'}`);
       }
     }
   };

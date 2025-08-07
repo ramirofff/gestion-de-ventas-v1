@@ -25,10 +25,10 @@ export async function GET(request: NextRequest) {
       capabilities: account.capabilities,
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error retrieving Stripe Express account:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to retrieve Express account' },
+      { error: (error as Error).message || 'Failed to retrieve Express account' },
       { status: 500 }
     );
   }

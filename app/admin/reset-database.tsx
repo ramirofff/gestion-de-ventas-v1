@@ -41,12 +41,12 @@ export async function resetDatabaseData() {
         .not('id', 'is', null);
       
       if (!salesDetailsError) console.log('✓ Detalles de ventas eliminados');
-    } catch (e) {
+    } catch (_e) {
       console.log('Tabla de detalles de ventas no encontrada o no accesible');
     }
     
     return { success: true, message: 'Datos eliminados correctamente' };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error al eliminar datos:', error);
     return { success: false, error };
   }
@@ -54,20 +54,20 @@ export async function resetDatabaseData() {
 
 // Componente para mostrar un botón de reinicio
 export default function ResetDatabaseButton() {
-  const handleReset = async () => {
+    const handleProductsReset = async (_e: React.MouseEvent) => {
     if (confirm('¿Estás seguro de que quieres eliminar TODOS los datos (excepto usuarios)? Esta acción no se puede deshacer.')) {
       const result = await resetDatabaseData();
       if (result.success) {
         alert('Datos eliminados correctamente. Por favor, recarga la página.');
       } else {
-        alert('Error al eliminar los datos: ' + (result.error?.message || 'Desconocido'));
+        alert('Error al eliminar los datos: ' + ((result.error as Error)?.message || 'Desconocido'));
       }
     }
   };
 
   return (
     <button
-      onClick={handleReset}
+      onClick={handleProductsReset}
       className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold"
     >
       Reiniciar Base de Datos
