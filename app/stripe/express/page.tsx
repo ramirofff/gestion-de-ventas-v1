@@ -44,11 +44,29 @@ export default function StripeExpressPage() {
             color: '#111827', 
             marginBottom: '0.5rem' 
           }}>
-            🔗 Configuración de Stripe Express
+            🇺🇸 Configuración de Stripe Express USA
           </h1>
           <p style={{ color: '#6b7280' }}>
-            Configura tu cuenta de Stripe Express para empezar a recibir pagos.
+            Configura tu cuenta de Stripe Express en Estados Unidos para recibir pagos internacionales.
           </p>
+          
+          <div style={{
+            backgroundColor: '#dbeafe',
+            border: '1px solid #93c5fd',
+            borderRadius: '0.5rem',
+            padding: '1rem',
+            marginTop: '1rem'
+          }}>
+            <h3 style={{ color: '#1e40af', fontWeight: '600', margin: '0 0 0.5rem 0' }}>
+              💡 Información importante
+            </h3>
+            <ul style={{ color: '#1e3a8a', margin: 0, paddingLeft: '1.5rem', lineHeight: '1.6' }}>
+              <li>Tu cuenta será creada en Estados Unidos 🇺🇸</li>
+              <li>Podrás recibir pagos de todo el mundo 🌍</li>
+              <li>Los pagos se procesarán en USD 💵</li>
+              <li>Compatible con QR codes y links de pago 📱</li>
+            </ul>
+          </div>
         </div>
 
         <div style={{ marginBottom: '2rem' }}>

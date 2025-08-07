@@ -248,7 +248,7 @@ const [ventas, setVentas] = useState<Sale[]>([]);
 
   // Función para configurar Stripe Express
   const handleStripeConfiguration = () => {
-    // Navegar en la misma ventana en lugar de abrir nueva ventana
+    // Navegar a Stripe Express original
     window.location.href = '/stripe/express';
   };
   const [businessName, setBusinessName] = useState(() => {
