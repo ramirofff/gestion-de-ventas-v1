@@ -23,6 +23,7 @@ import { useCategories } from '../hooks/useCategories';
 import { ProductSearch } from '../components/ProductSearch';
 import { DatabaseStatus } from '../components/DatabaseStatus';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { StripeConfigManager } from '../lib/stripe-config';
 
 
 
@@ -175,10 +176,15 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(false);
     };
     getUser();
 
-    // Verificar si Stripe ya está configurado
-    const stripeAccountId = localStorage.getItem('stripe_express_account_id');
-    const stripeConfiguredFlag = localStorage.getItem('stripe_configured');
-    setStripeConfigured(!!stripeAccountId || stripeConfiguredFlag === 'true');
+    // Migrar configuración de Stripe desde localStorage si existe
+    StripeConfigManager.migrateFromLocalStorage();
+
+    // Verificar si Stripe ya está configurado desde Supabase
+    const checkStripeConfig = async () => {
+      const config = await StripeConfigManager.getConfig();
+      setStripeConfigured(StripeConfigManager.isAccountReady(config));
+    };
+    checkStripeConfig();
 
     // Suscribirse a cambios de sesión
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -244,9 +250,6 @@ const [ventas, setVentas] = useState<Sale[]>([]);
   const handleStripeConfiguration = () => {
     // Navegar en la misma ventana en lugar de abrir nueva ventana
     window.location.href = '/stripe/express';
-    // Marcar como configurado para no mostrarlo más
-    localStorage.setItem('stripe_configured', 'true');
-    setStripeConfigured(true);
   };
   const [businessName, setBusinessName] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -269,11 +272,10 @@ const [ventas, setVentas] = useState<Sale[]>([]);
       return;
     }
 
-    // Verificar si Stripe está configurado
-    const stripeAccountId = localStorage.getItem('stripe_express_account_id');
-    const stripeConfiguredFlag = localStorage.getItem('stripe_configured');
+    // Verificar si Stripe está configurado usando el nuevo sistema
+    const config = await StripeConfigManager.getConfig();
     
-    if (!stripeAccountId && stripeConfiguredFlag !== 'true') {
+    if (!StripeConfigManager.isAccountReady(config)) {
       setToast({ 
         type: 'error', 
         message: 'Debes configurar tu cuenta de Stripe antes de procesar pagos' 

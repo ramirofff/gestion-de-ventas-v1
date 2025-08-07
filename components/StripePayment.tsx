@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QRDisplay } from './QRDisplay';
 
 interface StripePaymentProps {
@@ -19,6 +19,62 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(false); // Nuevo estado para alternar QR/Link
+  const [sessionId, setSessionId] = useState<string | null>(null); // Para trackear el pago
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
+  const [isPolling, setIsPolling] = useState(false); // Estado del polling
+
+  // Función para verificar el estado del pago
+  const checkPaymentStatus = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/stripe/payment/status?session_id=${sessionId}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        if (data.payment_status === 'paid') {
+          setPaymentStatus('completed');
+          setIsPolling(false);
+          
+          // Simular éxito del pago y cerrar modal
+          setTimeout(() => {
+            if (onClose) onClose();
+            // Trigger success state in parent component
+            window.location.href = '/?payment=success';
+          }, 1500);
+        } else if (data.status === 'expired') {
+          setPaymentStatus('failed');
+          setIsPolling(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+    }
+  };
+
+  // Effect para iniciar polling cuando se muestra QR
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+    
+    if (showQR && sessionId && paymentStatus === 'pending') {
+      setIsPolling(true);
+      // Verificar cada 3 segundos
+      pollInterval = setInterval(() => {
+        checkPaymentStatus(sessionId);
+      }, 3000);
+    }
+
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [showQR, sessionId, paymentStatus]);
+
+  // Limpiar polling cuando se cierra el modal
+  useEffect(() => {
+    return () => {
+      setIsPolling(false);
+    };
+  }, []);
 
   const createPaymentLink = async () => {
     setLoading(true);
@@ -49,6 +105,7 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
       }
 
       setPaymentUrl(data.payment_url);
+      setSessionId(data.session_id); // Guardar session ID para verificar estado
 
     } catch (err: unknown) {
       console.error('Error creating payment link:', err);
@@ -262,6 +319,40 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
                 }}>
                   📱 Escanea el código QR para pagar con tarjeta internacional
                 </p>
+                
+                {/* Estado del polling */}
+                {isPolling && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    color: '#3b82f6',
+                    fontSize: '14px',
+                    margin: '12px 0'
+                  }}>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      border: '2px solid #e5e7eb',
+                      borderTop: '2px solid #3b82f6',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }}></div>
+                    <span>Esperando el pago...</span>
+                  </div>
+                )}
+                
+                {paymentStatus === 'completed' && (
+                  <div style={{
+                    color: '#059669',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    margin: '12px 0'
+                  }}>
+                    ✅ ¡Pago completado exitosamente!
+                  </div>
+                )}
               </div>
             ) : (
               <button
@@ -330,6 +421,14 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
           </ul>
         </div>
       </div>
+      
+      {/* Estilos CSS para la animación */}
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
