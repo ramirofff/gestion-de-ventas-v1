@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Obtener información de la sesión de Stripe
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent']
+    });
 
     return NextResponse.json({
       status: session.status,
@@ -22,6 +24,7 @@ export async function GET(request: NextRequest) {
       amount_total: session.amount_total,
       currency: session.currency,
       customer_email: session.customer_details?.email || null,
+      payment_intent: session.payment_intent,
     });
 
   } catch (error: unknown) {

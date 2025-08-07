@@ -48,6 +48,13 @@ export function StripePayment({ amount, items, onClose, selectedClient }: Stripe
           
           // 🆕 GUARDAR LA VENTA CUANDO SE COMPLETA EL PAGO
           console.log('💰 Pago completado, guardando venta...');
+          console.log('📋 Datos del pago:', data);
+          
+          const paymentIntentId = typeof data.payment_intent === 'string' 
+            ? data.payment_intent 
+            : data.payment_intent?.id;
+          
+          console.log('🔑 Payment Intent ID:', paymentIntentId);
           
           try {
             const saveResponse = await fetch('/api/stripe/complete-payment', {
@@ -56,7 +63,7 @@ export function StripePayment({ amount, items, onClose, selectedClient }: Stripe
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                payment_intent_id: data.payment_intent?.id,
+                payment_intent_id: paymentIntentId,
                 user_id: currentUser?.id || 'anonymous',
                 cart: items,
                 total: amount,
@@ -64,10 +71,13 @@ export function StripePayment({ amount, items, onClose, selectedClient }: Stripe
               }),
             });
 
+            const saveData = await saveResponse.json();
+            console.log('💾 Respuesta del guardado:', saveData);
+
             if (saveResponse.ok) {
               console.log('✅ Venta guardada exitosamente');
             } else {
-              console.error('❌ Error al guardar la venta');
+              console.error('❌ Error al guardar la venta:', saveData.error);
             }
           } catch (saveError) {
             console.error('Error guardando la venta:', saveError);

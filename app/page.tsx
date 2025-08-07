@@ -188,6 +188,9 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       setTimeout(() => setSuccess(false), 1500);
       setToast({ type: 'success', message: '¡Pago procesado exitosamente!' });
       
+      // 🔄 REFRESCAR HISTORIAL DE VENTAS DESPUÉS DEL PAGO
+      setSalesRefreshTrigger(prev => prev + 1);
+      
       // Limpiar el parámetro de la URL
       window.history.replaceState({}, '', window.location.pathname);
     }

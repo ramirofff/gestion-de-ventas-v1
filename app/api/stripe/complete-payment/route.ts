@@ -39,7 +39,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Guardar la venta en la base de datos
-    const saleCreated = await createSale(
+    console.log('📝 Guardando venta con datos:', {
+      cart: cart.length,
+      total,
+      user_id,
+      payment_intent_id
+    });
+    
+    const saleResult = await createSale(
       cart,
       total,
       user_id,
@@ -53,9 +60,12 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    if (!saleCreated) {
+    console.log('🔍 Resultado de createSale:', saleResult);
+
+    if (!saleResult || saleResult.error) {
+      console.error('❌ Error al guardar venta:', saleResult?.error);
       return NextResponse.json(
-        { error: 'Error al guardar la venta' },
+        { error: saleResult?.error?.message || 'Error al guardar la venta' },
         { status: 500 }
       );
     }
