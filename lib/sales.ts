@@ -2,12 +2,21 @@
 import { supabase } from './supabaseClient';
 import { CartItem } from '../hooks/useCart';
 
-export async function createSale(cart: CartItem[], total: number, userId?: string) {
+export async function createSale(
+  cart: CartItem[], 
+  total: number, 
+  userId?: string, 
+  clientId?: string,
+  stripePaymentIntentId?: string,
+  metadata?: any
+) {
   try {
     console.log('🚀 INICIANDO CREACIÓN DE VENTA');
     console.log('- Cart recibido:', cart);
     console.log('- Total recibido:', total);
     console.log('- UserID recibido:', userId);
+    console.log('- ClientID recibido:', clientId);
+    console.log('- StripeID recibido:', stripePaymentIntentId);
     
     // Validar datos de entrada
     if (!cart || cart.length === 0) {
@@ -41,9 +50,12 @@ export async function createSale(cart: CartItem[], total: number, userId?: strin
       items: items,    // JSONB array con los productos (campo adicional que tienes)
       total: total,
       subtotal: total, // Agregamos subtotal que es requerido en tu esquema
-      payment_method: 'cash',
+      payment_method: stripePaymentIntentId ? 'stripe' : 'cash',
       payment_status: 'completed',
-      status: 'completed'
+      status: 'completed',
+      client_id: clientId || null,
+      stripe_payment_intent_id: stripePaymentIntentId || null,
+      metadata: metadata || null
     };
     
     console.log('Datos a insertar en sales:', saleData);

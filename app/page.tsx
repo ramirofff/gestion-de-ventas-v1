@@ -24,6 +24,7 @@ import { ProductSearch } from '../components/ProductSearch';
 import { DatabaseStatus } from '../components/DatabaseStatus';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { StripeConfigManager } from '../lib/stripe-config';
+import { User } from '@supabase/supabase-js';
 
 
 
@@ -32,7 +33,28 @@ import { StripeConfigManager } from '../lib/stripe-config';
 
 type ViewType = 'home' | 'admin' | 'sales' | 'reports' | 'stats' | 'shortcuts' | 'help';
 
-export default function Home() {
+interface HomeProps {
+  preSelectedClient?: any;
+}
+
+function HomeComponent({ preSelectedClient = null }: HomeProps) {
+  // Estado para el usuario autenticado
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
+  // Obtener usuario autenticado al cargar
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user ?? null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
   // --- Estado y lógica para edición de producto ---
   type EditProductType = { id: string; name: string; price: number; category: string } | null;
   const [editProduct, setEditProduct] = useState<EditProductType>(null);
@@ -115,7 +137,7 @@ type User = { id: string; email?: string };
 const [user, setUser] = useState<User | null>(null);
 const [showVerificationSuccess, setShowVerificationSuccess] = useState(false);
 const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0); // Para refrescar el historial de ventas
-const [stripeConfigured, setStripeConfigured] = useState<boolean>(false);
+const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hardcodeado - plataforma ya configurada
 
   // Cargar usuario autenticado de Supabase al montar y en cambios de sesión
   useEffect(() => {
@@ -176,15 +198,7 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(false);
     };
     getUser();
 
-    // Migrar configuración de Stripe desde localStorage si existe
-    StripeConfigManager.migrateFromLocalStorage();
-
-    // Verificar si Stripe ya está configurado desde Supabase
-    const checkStripeConfig = async () => {
-      const config = await StripeConfigManager.getConfig();
-      setStripeConfigured(StripeConfigManager.isAccountReady(config));
-    };
-    checkStripeConfig();
+    // Stripe ya está configurado - no necesita verificación
 
     // Suscribirse a cambios de sesión
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -245,12 +259,6 @@ const [ventas, setVentas] = useState<Sale[]>([]);
 
   // Estado para el nombre del negocio editable
   const [editingName, setEditingName] = useState(false);
-
-  // Función para configurar Stripe Express
-  const handleStripeConfiguration = () => {
-    // Navegar a Stripe Express original
-    window.location.href = '/stripe/express';
-  };
   const [businessName, setBusinessName] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('businessName') || 'Gestion de ventas V1';
@@ -271,24 +279,8 @@ const [ventas, setVentas] = useState<Sale[]>([]);
       setToast({ type: 'error', message: 'No hay productos en el carrito' });
       return;
     }
-
-    // Verificar si Stripe está configurado usando el nuevo sistema
-    const config = await StripeConfigManager.getConfig();
     
-    if (!StripeConfigManager.isAccountReady(config)) {
-      setToast({ 
-        type: 'error', 
-        message: 'Debes configurar tu cuenta de Stripe antes de procesar pagos' 
-      });
-      // Mostrar opción para configurar
-      const shouldConfigure = confirm('¿Quieres configurar tu cuenta de Stripe ahora?');
-      if (shouldConfigure) {
-        handleStripeConfiguration();
-      }
-      return;
-    }
-    
-    // Mostrar modal de pago de Stripe
+    // Plataforma ya está configurada - mostrar modal de pago directo
     setShowStripePayment(true);
   };
 
@@ -391,6 +383,7 @@ const subtotal = cart.reduce((sum: number, item: Product & { quantity: number })
   const discountValue = discountType === 'amount' ? discount : Math.round((subtotal * discount) / 100);
   const total = Math.max(0, subtotal - discountValue);
   const [showStripePayment, setShowStripePayment] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<any>(preSelectedClient);
 const [ticket, setTicket] = useState<{ ticket_id?: number; id?: string; date: string | Date; products: (Product & { quantity: number })[]; total: number } | null>(null);
   const [paying, setPaying] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -752,14 +745,6 @@ favoritos.map((prod: Product) => (
             <button onClick={() => setView('help')} className={`${btnBase} ${btnHelp} transition-transform hover:scale-105`}>
               <HelpCircle className="w-6 h-6 text-blue-400" /> Soporte / Ayuda
             </button>
-            {!stripeConfigured && (
-              <button 
-                onClick={handleStripeConfiguration} 
-                className={`${btnBase} bg-gradient-to-r from-purple-600 to-blue-600 text-white border-purple-500 transition-transform hover:scale-105 animate-pulse`}
-              >
-                <CreditCard className="w-6 h-6 text-yellow-300" /> 🚀 Configurar Pagos (Stripe)
-              </button>
-            )}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className={`${btnBase} ${btnTheme} ml-4 transition-transform hover:scale-105`}
@@ -774,26 +759,6 @@ favoritos.map((prod: Product) => (
           <>
             <h2 className={`text-2xl font-bold mb-6 ${textMain}`}>Menú de productos</h2>
             
-            {!stripeConfigured && (
-              <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-l-4 border-blue-500 rounded-lg shadow-sm">
-                <div className="flex items-center">
-                  <CreditCard className="w-5 h-5 text-blue-600 mr-2" />
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-blue-800">🚀 ¡Configura tu sistema de pagos!</h3>
-                    <p className="text-sm text-blue-700 mt-1">
-                      Configura Stripe Express para empezar a recibir pagos con tarjetas de crédito.
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleStripeConfiguration}
-                    className="ml-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
-                  >
-                    Configurar Ahora
-                  </button>
-                </div>
-              </div>
-            )}
-
             <ProductSearch onSearch={setSearchTerm} />
             <CategoryFilter
               categories={categories}
@@ -928,6 +893,7 @@ favoritos.map((prod: Product) => (
                   </div>
                 ))}
               </div>
+              
               {/* Descuento visual mejorado y colorido + tipo */}
               <div className="mt-6">
                 <label className="block text-sm font-semibold mb-1" htmlFor="discount-input">
@@ -1031,6 +997,7 @@ favoritos.map((prod: Product) => (
             description: item.category || undefined
           }))}
           onClose={() => setShowStripePayment(false)}
+          selectedClient={selectedClient}
         />
       )}
       {/* Ticket visual */}
@@ -1106,3 +1073,11 @@ favoritos.map((prod: Product) => (
     </main>
   </>);
 }
+
+// Export por defecto para la página normal
+export default function Home() {
+  return <HomeComponent />;
+}
+
+// Export nombrado para usar desde rutas de cliente específico
+export { HomeComponent };

@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { QRDisplay } from './QRDisplay';
+import { ClientAccount } from '../lib/client-accounts';
+import { supabase } from '../lib/supabaseClient';
+import { User } from '@supabase/supabase-js';
 
 interface StripePaymentProps {
   amount: number;
@@ -12,16 +15,25 @@ interface StripePaymentProps {
     description?: string;
   }>;
   onClose?: () => void;
+  selectedClient?: ClientAccount | null;
 }
 
-export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
+export function StripePayment({ amount, items, onClose, selectedClient }: StripePaymentProps) {
   const [loading, setLoading] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showQR, setShowQR] = useState(false); // Nuevo estado para alternar QR/Link
-  const [sessionId, setSessionId] = useState<string | null>(null); // Para trackear el pago
+  const [showQR, setShowQR] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
-  const [isPolling, setIsPolling] = useState(false); // Estado del polling
+  const [isPolling, setIsPolling] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // Obtener usuario autenticado
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user ?? null);
+    });
+  }, []);
 
   // Función para verificar el estado del pago
   const checkPaymentStatus = async (sessionId: string) => {
@@ -33,6 +45,33 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
         if (data.payment_status === 'paid') {
           setPaymentStatus('completed');
           setIsPolling(false);
+          
+          // 🆕 GUARDAR LA VENTA CUANDO SE COMPLETA EL PAGO
+          console.log('💰 Pago completado, guardando venta...');
+          
+          try {
+            const saveResponse = await fetch('/api/stripe/complete-payment', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                payment_intent_id: data.payment_intent?.id,
+                user_id: currentUser?.id || 'anonymous',
+                cart: items,
+                total: amount,
+                client_email: currentUser?.email || null,
+              }),
+            });
+
+            if (saveResponse.ok) {
+              console.log('✅ Venta guardada exitosamente');
+            } else {
+              console.error('❌ Error al guardar la venta');
+            }
+          } catch (saveError) {
+            console.error('Error guardando la venta:', saveError);
+          }
           
           // Simular éxito del pago y cerrar modal
           setTimeout(() => {
@@ -81,6 +120,8 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
     setError(null);
 
     try {
+      console.log('💳 Iniciando pago para usuario:', currentUser?.email);
+      
       // Guardar datos del carrito en localStorage para recuperarlos después del pago
       localStorage.setItem('pre_payment_cart', JSON.stringify(items));
       localStorage.setItem('pre_payment_total', amount.toString());
@@ -95,6 +136,8 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
           currency: 'usd',
           description: `Venta - ${items.length} producto(s)`,
           items: items,
+          customer_email: currentUser?.email || undefined, // 🎯 Email del usuario autenticado
+          user_id: currentUser?.id || undefined, // 🎯 ID del usuario autenticado
         }),
       });
 
@@ -163,6 +206,25 @@ export function StripePayment({ amount, items, onClose }: StripePaymentProps) {
           }}>
             💳 Pagar con Stripe
           </h2>
+          
+          {/* Info del usuario */}
+          {currentUser?.email && (
+            <div style={{
+              marginTop: '12px',
+              padding: '8px 12px',
+              backgroundColor: '#eff6ff',
+              border: '1px solid #3b82f6',
+              borderRadius: '8px',
+              fontSize: '14px'
+            }}>
+              <p style={{ margin: 0, color: '#1e40af' }}>
+                <strong>Cliente:</strong> {currentUser.email}
+              </p>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6b7280' }}>
+                Este email se usará automáticamente en Stripe
+              </p>
+            </div>
+          )}
           {onClose && (
             <button
               onClick={onClose}

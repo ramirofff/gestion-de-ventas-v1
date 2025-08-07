@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
       description, 
       items = [],
       customer_email,
+      user_id, // ID del usuario autenticado
       success_url,
       cancel_url 
     } = body;
@@ -21,6 +22,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    console.log('💳 Creando sesión de pago para usuario:', customer_email, '(ID:', user_id, ')');
 
     // Configurar URLs de retorno
     const defaultSuccessUrl = `${request.nextUrl.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`;
@@ -58,29 +61,71 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Buscar o crear customer en Stripe con el email del usuario autenticado
+    let customerId = null;
+    if (customer_email) {
+      // Buscar customer existente por email
+      const existingCustomers = await stripe.customers.list({
+        email: customer_email,
+        limit: 1,
+      });
+
+      if (existingCustomers.data.length > 0) {
+        customerId = existingCustomers.data[0].id;
+        console.log('✅ Customer existente encontrado:', customerId);
+      } else {
+        // Crear nuevo customer
+        const newCustomer = await stripe.customers.create({
+          email: customer_email,
+          metadata: {
+            user_id: user_id || 'unknown',
+            created_from: 'saas_app',
+            country: 'AR', // Cliente argentino usando la plataforma
+          },
+        });
+        customerId = newCustomer.id;
+        console.log('🆕 Nuevo customer creado:', customerId);
+      }
+    }
+
     // Crear sesión de checkout
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'], // Tarjetas internacionales (perfecto para Argentina)
+      payment_method_types: ['card'], // Tarjetas internacionales
       line_items: lineItems,
       mode: 'payment',
       success_url: success_url || defaultSuccessUrl,
       cancel_url: cancel_url || defaultCancelUrl,
-      customer_email: customer_email || undefined,
+      
+      // 🔒 CONFIGURACIÓN PARA OCULTAR EMAIL COMPLETAMENTE
+      customer: customerId || undefined, // Usar customer existente
+      customer_email: !customerId && customer_email ? customer_email : undefined,
+      customer_creation: customerId ? undefined : 'if_required', // Solo crear si es necesario
+      
+      // 🎯 CONFIGURACIÓN PARA OCULTAR CAMPOS
+      billing_address_collection: 'required', // Solo pedir dirección
+      phone_number_collection: { enabled: false }, // No pedir teléfono
+      
       metadata: {
         description: description || '',
         created_at: new Date().toISOString(),
-        merchant_country: 'AR', // Identificar comerciantes argentinos
+        merchant_country: 'AR',
+        user_id: user_id || 'unknown',
+        customer_email: customer_email || 'no-email',
+        merchant_email: customer_email || 'no-email', // Tu email como merchant
       },
-      // Configuración optimizada para Argentina recibiendo pagos internacionales
-      billing_address_collection: 'auto', 
-      allow_promotion_codes: true, 
+      
       payment_intent_data: {
-        receipt_email: customer_email || undefined,
+        receipt_email: customer_email || undefined, // Receipt a tu email
+        metadata: {
+          user_id: user_id || 'unknown',
+          customer_email: customer_email || 'no-email',
+          merchant_email: customer_email || 'no-email',
+        },
       },
-      // Optimizado para turistas/clientes internacionales
+      
+      // Configuración UX optimizada
       locale: 'es', // Formulario en español
-      submit_type: 'pay', // Botón optimizado
-      phone_number_collection: { enabled: false }, // No necesario para turistas
+      submit_type: 'pay', // Botón "Pagar"
     });
 
     return NextResponse.json({
