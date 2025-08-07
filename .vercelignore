@@ -1,0 +1,10 @@
+# Ignore temp files
+**/layout-fixed.tsx
+**/page-debug.tsx
+
+# Ignore node_modules
+node_modules/
+
+# Ignore build artifacts
+.next/
+out/
