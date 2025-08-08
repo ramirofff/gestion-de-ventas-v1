@@ -1,7 +1,6 @@
-
-
 "use client";
 import { useState, useEffect, useRef, useCallback } from 'react';
+// import { useSearchParams } from 'next/navigation'; // handle Stripe redirect - DESHABILITADO 
 import type { Product } from '../types/product';
 import type { Sale, SaleProduct } from '../types/sale';
 import type { Category } from '../types/category';
@@ -19,7 +18,7 @@ import { AddProductForm } from '../components/AddProductForm';
 import { CategoryFilter } from '../components/CategoryFilter';
 import { AdminPanel } from '../components/AdminPanel';
 import { SalesHistory } from '../components/SalesHistory';
-import { StripePayment } from '../components/StripePayment';
+import { StripePayment } from '../components/StripePayment_new';
 import { useCategories } from '../hooks/useCategories';
 import { ProductSearch } from '../components/ProductSearch';
 import { DatabaseStatus } from '../components/DatabaseStatus';
@@ -27,7 +26,8 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 import { StripeConfigManager } from '../lib/stripe-config';
 import { User } from '@supabase/supabase-js';
 import { useTheme } from '../contexts/ThemeContext';
-
+import { Modal } from '../components/Modal';
+import { TicketPreview } from '../components/TicketPreview';
 
 
 // ...existing code...
@@ -40,19 +40,58 @@ interface HomeProps {
 }
 
 function HomeComponent({ preSelectedClient = null }: HomeProps) {
-  // Estado para el usuario autenticado
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // const searchParams = useSearchParams();
+  // const sessionIdParam = searchParams.get('session_id');
+
+  // Handle Stripe checkout redirect - DESHABILITADO: ahora se maneja en /payment/success
+  // useEffect(() => {
+  //   if (sessionIdParam) {
+  //     handleStripePaymentSuccess(sessionIdParam);
+  //     // Remove the param from URL
+  //     window.history.replaceState({}, '', window.location.pathname);
+  //   }
+  // }, [sessionIdParam]);
+
+  // Listener para mensajes de la ventana de pago
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Verificar origen por seguridad
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (event.data.type === 'STRIPE_PAYMENT_SUCCESS') {
+        console.log('🎉 Mensaje de éxito recibido de ventana de pago:', event.data);
+        
+        // Procesar el pago exitoso en la pestaña principal
+        if (event.data.sessionId) {
+          handleStripePaymentSuccess(event.data.sessionId);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
+
+  
+  // Estado para el usuario autenticado - Consolidado en una sola variable
+  type LocalUser = { id: string; email?: string };
+  const [user, setUser] = useState<LocalUser | null>(null);
   
   // Obtener usuario autenticado al cargar
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUser(session?.user ?? null);
+      setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null);
+      setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
     });
 
     return () => subscription.unsubscribe();
@@ -145,8 +184,6 @@ function openEditProduct(product: Product) {
       setToast({ type: 'error', message: 'Error al recargar productos. Intenta de nuevo.' });
     }
   };
-type User = { id: string; email?: string };
-const [user, setUser] = useState<User | null>(null);
 const [showVerificationSuccess, setShowVerificationSuccess] = useState(false);
 const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0); // Para refrescar el historial de ventas
 const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hardcodeado - plataforma ya configurada
@@ -163,223 +200,6 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       setTimeout(() => setShowVerificationSuccess(false), 5000);
     }
 
-    // Verificar si el usuario regresa después de un pago exitoso
-    if (urlParams.get('payment') === 'success') {
-      const sessionId = urlParams.get('session_id');
-      
-      if (currentUser && sessionId) {
-        // Crear función async dentro del useEffect
-        const handlePaymentSuccess = async () => {
-          console.log('🚀 ===== PROCESANDO PAGO EXITOSO DESDE URL =====');
-          console.log('🔍 Session ID:', sessionId);
-          console.log('🔍 User ID:', currentUser?.id);
-          
-          try {
-            // PASO 1: INTENTAR RECUPERAR DESDE LOCALSTORAGE PRIMERO
-            console.log('💾 Buscando datos del pago en localStorage...');
-            const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
-            console.log('💾 Ventas en localStorage:', localSales.length);
-            
-            // Buscar la venta específica por session_id primero, luego la más reciente
-            let targetSale = null;
-            
-            if (sessionId) {
-              targetSale = localSales.find((sale: any) => sale.session_id === sessionId);
-              console.log('🔍 Buscando por session_id:', sessionId, 'Encontrada:', !!targetSale);
-            }
-            
-            // Si no encontramos por session_id, tomar la más reciente
-            if (!targetSale && localSales.length > 0) {
-              targetSale = localSales[localSales.length - 1];
-              console.log('🔍 Tomando venta más reciente:', targetSale.id);
-            }
-            
-            if (targetSale && targetSale.products && targetSale.products.length > 0) {
-              console.log('✅ Datos encontrados en localStorage:', targetSale);
-              
-              // Crear ticket desde localStorage con validación de datos
-              const ticketData = {
-                ticket_id: Number(targetSale.ticket_id) || Number(targetSale.id) || Date.now(),
-                id: targetSale.id?.toString() || Date.now().toString(),
-                date: targetSale.date ? new Date(targetSale.date) : new Date(),
-                created_at: targetSale.created_at || new Date().toISOString(),
-                products: targetSale.products || [],
-                items: (targetSale.items || targetSale.products || []).map((item: any) => ({
-                  id: item.id || 'unknown',
-                  name: item.name || 'Producto',
-                  price: Number(item.price) || 0,
-                  original_price: Number(item.original_price) || Number(item.price) || 0,
-                  quantity: Number(item.quantity) || 1
-                })),
-                total: Number(targetSale.total) || 0
-              };
-              
-              console.log('🎫 TICKET CREADO CON DATOS COMPLETOS:');
-              console.log('- ID:', ticketData.id);
-              console.log('- Total:', ticketData.total);
-              console.log('- Productos:', ticketData.products.length);
-              console.log('- Items:', ticketData.items.length);
-              
-              setTicket(ticketData);
-              console.log('🎫 Ticket creado desde localStorage:', ticketData);
-              
-              // Actualizar reportes locales
-              const totalVentas = localSales.reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
-              const cantidadTickets = localSales.length;
-              const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
-              
-              // Calcular ventas del día y del mes
-              const today = new Date();
-              const todayStr = today.toISOString().split('T')[0];
-              const currentMonth = today.getMonth();
-              const currentYear = today.getFullYear();
-              
-              const ventasDelDia = localSales
-                .filter((sale: any) => {
-                  const saleDate = new Date(sale.timestamp || sale.date).toISOString().split('T')[0];
-                  return saleDate === todayStr;
-                })
-                .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
-              
-              const ventasDelMes = localSales
-                .filter((sale: any) => {
-                  const saleDate = new Date(sale.timestamp || sale.date);
-                  return saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear;
-                })
-                .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
-              
-              setReportes({ totalVentas, cantidadTickets, promedio, ventasDelDia, ventasDelMes });
-              
-              // Disparar actualización del historial
-              setSalesRefreshTrigger(prev => prev + 1);
-              
-              return;
-            }
-            
-            // PASO 2: SI NO HAY DATOS EN LOCALSTORAGE, INTENTAR SUPABASE (FALLBACK)
-            console.log('🔄 No hay datos recientes en localStorage, intentando Supabase...');
-            const paymentSession = await UserSettingsManager.getPaymentSession(currentUser.id, sessionId);
-            
-            if (paymentSession && paymentSession.cart_data && paymentSession.total_amount) {
-              const cartData = paymentSession.cart_data;
-              const totalAmount = paymentSession.total_amount;
-              
-              console.log('✅ Datos recuperados de Supabase:', { cartData, totalAmount });
-              
-              // Crear el ticket con los datos reales del pago
-              const ticketId = Date.now();
-              const ticketData = {
-                ticket_id: ticketId,
-                id: ticketId.toString(),
-                date: new Date(),
-                created_at: new Date().toISOString(),
-                products: cartData,
-                items: cartData.map((item: any) => ({
-                  id: item.id,
-                  name: item.name || 'Producto',
-                  price: Number(item.price) || 0,
-                  quantity: Number(item.quantity) || 1
-                })),
-                total: totalAmount,
-              };
-              
-              setTicket(ticketData);
-              
-              // GUARDAR EN LOCALSTORAGE PARA FUTURAS REFERENCIAS
-              const saleForStorage = {
-                id: ticketId.toString(),
-                ticket_id: ticketId,
-                date: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-                products: cartData,
-                items: cartData,
-                total: totalAmount,
-                payment_method: 'stripe',
-                payment_status: 'completed',
-                status: 'completed',
-                user_id: currentUser.id
-              };
-              
-              const existingSales = JSON.parse(localStorage.getItem('sales') || '[]');
-              existingSales.push(saleForStorage);
-              localStorage.setItem('sales', JSON.stringify(existingSales));
-              console.log('💾 Venta guardada en localStorage desde Supabase');
-              
-              console.log('✅ Ticket creado con total desde Supabase:', totalAmount);
-            } else {
-              console.warn('⚠️ No se encontraron datos de pago en ningún lado para session:', sessionId);
-              
-              // PASO 3: FALLBACK COMPLETO - CREAR TICKET VACÍO
-              const ticketId = Date.now();
-              setTicket({
-                ticket_id: ticketId,
-                id: ticketId.toString(),
-                date: new Date(),
-                created_at: new Date().toISOString(),
-                products: [],
-                items: [],
-                total: 0,
-              });
-              console.log('⚠️ Ticket creado vacío como último recurso');
-            }
-          } catch (error) {
-            console.error('❌ Error al recuperar sesión de pago:', error);
-            
-            // FALLBACK DE EMERGENCIA
-            const ticketId = Date.now();
-            setTicket({
-              ticket_id: ticketId,
-              id: ticketId.toString(),
-              date: new Date(),
-              created_at: new Date().toISOString(),
-              products: [],
-              items: [],
-              total: 0,
-            });
-          }
-        };
-        
-        handlePaymentSuccess();
-        
-        // Limpiar la URL después de procesar el pago
-        setTimeout(() => {
-          window.history.replaceState({}, '', window.location.pathname);
-        }, 1000);
-      } else {
-        console.warn('⚠️ Usuario no autenticado o sessionId no encontrado');
-        console.warn('⚠️ currentUser:', currentUser);
-        console.warn('⚠️ sessionId:', sessionId);
-        
-        const ticketId = Math.floor(Math.random() * 100000);
-        setTicket({
-          ticket_id: ticketId,
-          id: ticketId.toString(),
-          date: new Date(),
-          products: [],
-          total: 0,
-        });
-      }
-      
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 1500);
-      setToast({ type: 'success', message: '¡Pago procesado exitosamente!' });
-      
-      // 🔄 REFRESCAR HISTORIAL DE VENTAS DESPUÉS DEL PAGO
-      setSalesRefreshTrigger(prev => prev + 1);
-      
-      // También recargar las ventas para reportes si estamos en esa vista
-      if (view === 'reports' || view === 'stats') {
-        // Forzar recarga de ventas para actualizar reportes
-        setTimeout(() => {
-          if (user) {
-            setView(view); // Trigger re-render de la vista actual
-          }
-        }, 500);
-      }
-      
-      // Limpiar el parámetro de la URL
-      window.history.replaceState({}, '', window.location.pathname);
-    }
 
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -528,229 +348,250 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
   
   useEffect(() => {
     const loadBusinessName = async () => {
-      if (currentUser && !businessNameLoaded) {
-        const name = await UserSettingsManager.getBusinessName(currentUser.id);
+      if (user && !businessNameLoaded) {
+        const name = await UserSettingsManager.getBusinessName(user.id);
         setBusinessName(name);
         setBusinessNameLoaded(true);
       }
     };
     loadBusinessName();
-  }, [currentUser, businessNameLoaded]);
+  }, [user, businessNameLoaded]);
   
   const saveBusinessName = async (name: string) => {
     setEditingName(false);
     setBusinessName(name);
-    if (currentUser) {
-      await UserSettingsManager.setBusinessName(currentUser.id, name);
+    if (user) {
+      await UserSettingsManager.setBusinessName(user.id, name);
     }
   };
 
-  // Función para pagar con Stripe
-  const handlePay = async () => {
-    if (cart.length === 0) {
-      setToast({ type: 'error', message: 'No hay productos en el carrito' });
-      return;
-    }
-    
-    // Plataforma ya está configurada - mostrar modal de pago directo
+  // Función para iniciar el pago con Stripe
+  const handlePay = () => {
     setShowStripePayment(true);
   };
 
-  // Función que se ejecuta después de un pago exitoso con Stripe
-  const handleStripePaymentSuccess = async () => {
-    console.log('🚀 ===== INICIANDO PROCESO POST-PAGO =====');
-    console.log('🛒 Cart data antes de procesar:', cart);
-    console.log('💰 Total antes de procesar:', total);
+  // Función para manejar éxito de pago de Stripe
+  const handleStripePaymentSuccess = async (sessionId: string) => {
+    console.log('🎉 Pago Stripe exitoso, procesando...', { sessionId });
     
-    setPaying(true);
+    setShowStripePayment(false);
+    
+    // Si no hay usuario, intentar obtener la sesión actual
+    let currentUser = user;
+    if (!currentUser?.id) {
+      console.log('⏳ Usuario no disponible, obteniendo sesión actual...');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          currentUser = { id: session.user.id, email: session.user.email };
+          setUser(currentUser); // Actualizar el estado también
+          console.log('✅ Usuario obtenido de sesión:', currentUser);
+        }
+      } catch (error) {
+        console.error('❌ Error obteniendo sesión:', error);
+      }
+    }
+    
+    if (!currentUser?.id) {
+      console.error('❌ Error: Usuario no autenticado después de reintentar');
+      setToast({ type: 'error', message: 'Error: Usuario no autenticado' });
+      return;
+    }
     
     try {
-      // Generar ID del ticket
-      const ticketId = Math.floor(Math.random() * 100000);
-      let saleData = null;
+      console.log('🔍 Obteniendo detalles de la sesión de Stripe:', sessionId);
       
-      // Guardar la venta en la base de datos si hay un usuario autenticado
-      if (user && cart.length > 0) {
-        try {
-          console.log('Iniciando proceso de guardado de venta después de pago exitoso...');
-          console.log('Usuario:', user.id);
-          console.log('Carrito:', cart);
-          console.log('Total:', total);
-          
-          const { data, error } = await createSale(cart, total, user.id);
-          
-          console.log('🔍 createSale RESULTADO COMPLETO:');
-          console.log('  - data:', data);
-          console.log('  - error:', error);
-          console.log('  - data tipo:', typeof data);
-          console.log('  - data es array?', Array.isArray(data));
-          console.log('  - data[0]:', data?.[0]);
-          
-          if (error) {
-            console.error('Error al guardar la venta:', error);
-          } else {
-            console.log('Venta guardada correctamente:', data);
-            saleData = data?.[0]; // Guardar los datos de la venta real
-            
-            console.log('🔍 saleData FINAL asignado:', saleData);
-            console.log('🔍 saleData.total:', saleData?.total);
-            console.log('🔍 saleData.items:', saleData?.items);
-            console.log('🔍 saleData.products:', saleData?.products);
-            
-            // Disparar actualización del historial de ventas y reportes
-            setSalesRefreshTrigger(prev => prev + 1);
-            
-            // Actualizar reportes también
-            if (user) {
-              try {
-                const { data: salesData } = await supabase
-                  .from('sales')
-                  .select('*')
-                  .eq('user_id', user.id);
-                
-                if (salesData) {
-                  const totalVentas = salesData.reduce((sum, sale) => sum + (sale.total || 0), 0);
-                  const cantidadTickets = salesData.length;
-                  const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
-                  
-                  // Para este contexto usamos 0 por defecto ya que no calculamos día/mes aquí
-                  // Este setReportes se ejecuta después del pago, el sistema híbrido lo actualizará
-                  setReportes({ totalVentas, cantidadTickets, promedio, ventasDelDia: 0, ventasDelMes: 0 });
-                }
-              } catch (reportError) {
-                console.warn('Error al actualizar reportes:', reportError);
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Error inesperado al guardar la venta:', err);
-        }
+      // Obtener los datos de la sesión de Stripe para recuperar la información original
+      const response = await fetch('/api/stripe/payment/status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          user_id: currentUser.id
+        })
+      });
+      
+      const stripeData = await response.json();
+      console.log('📦 Datos de Stripe obtenidos:', stripeData);
+      
+      if (!stripeData.success) {
+        throw new Error(stripeData.message || 'Error al verificar el pago con Stripe');
       }
       
-      setPaying(false);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 1500);
+      // Recuperar los datos originales de la sesión
+      const { session_details } = stripeData;
+      if (!session_details || !session_details.line_items) {
+        throw new Error('No se pudieron recuperar los detalles de la compra');
+      }
       
-      // PASO ADICIONAL: GUARDAR EN LOCALSTORAGE COMO RESPALDO CONFIABLE
-      console.log('💾 GUARDANDO TAMBIÉN EN LOCALSTORAGE COMO RESPALDO...');
+      // Construir los datos del carrito desde Stripe
+      const stripeItems = session_details.line_items.map((lineItem: any) => {
+        const priceInDollars = lineItem.price.unit_amount / 100; // Stripe usa centavos
+        return {
+          id: lineItem.price.product || `stripe_${Date.now()}_${Math.random()}`,
+          name: lineItem.description || lineItem.price.product_data?.name || 'Producto',
+          price: priceInDollars,
+          original_price: priceInDollars, // Por ahora sin descuentos a nivel de item
+          quantity: lineItem.quantity,
+          category: '', // No disponible desde Stripe
+          // Campos adicionales necesarios para CartItem
+          user_id: currentUser.id,
+          image_url: '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          stock_quantity: 999999, // Valor por defecto
+          inactive: false
+        };
+      });
+      
+      const totalFromStripe = session_details.amount_total / 100; // Stripe usa centavos
+      const subtotalFromStripe = session_details.amount_subtotal / 100;
+      const discountFromStripe = subtotalFromStripe - totalFromStripe;
+      
+      console.log('💾 Creando venta con datos de Stripe:', { 
+        items: stripeItems.length + ' items', 
+        total: totalFromStripe, 
+        userId: currentUser.id,
+        paymentIntentId: session_details.payment_intent_id 
+      });
+      
+      console.log('🎯 ANTES DE LLAMAR A createSale - Datos finales:');
+      console.log('- stripeItems:', stripeItems);
+      console.log('- totalFromStripe:', totalFromStripe);  
+      console.log('- user.id:', currentUser.id);
+      console.log('- selectedClient?.id:', selectedClient?.id || null);
+      console.log('- payment_intent_id:', session_details.payment_intent_id);
+      
+      // Crear venta en la base de datos usando endpoint API
+      console.log('🚀 CLIENT: Enviando datos a API para crear venta...');
+      const createSaleResponse = await fetch('/api/create-sale', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          stripeItems,
+          totalFromStripe,
+          userId: currentUser.id,
+          clientId: selectedClient?.id || undefined,
+          paymentIntentId: session_details.payment_intent_id,
+          metadata: {
+            stripe_session_id: sessionId,
+            customer_email: session_details.customer_email,
+            platform: 'stripe_checkout'
+          }
+        })
+      });
+      
+      const saleResult = await createSaleResponse.json();
+      console.log('✅ CLIENT: Respuesta de API create-sale:', saleResult);
+      
+      if (!saleResult.success) {
+        console.error('❌ CLIENT: Error en API create-sale:', saleResult.error);
+        throw new Error('Error al crear la venta: ' + saleResult.error);
+      } else {
+        console.log('🎉 CLIENT: VENTA CREADA EXITOSAMENTE:', saleResult.data);
+      }
+      
+      // Guardar también en localStorage como respaldo
       const saleForLocalStorage = {
         id: Date.now().toString(),
-        ticket_id: Date.now(),
-        date: new Date().toISOString(),
+        ticket_id: sessionId,
         created_at: new Date().toISOString(),
-        products: [...cart],
-        items: cart.map(item => ({
-          id: item.id,
-          name: item.name || 'Producto',
-          price: Number(item.price) || 0,
-          original_price: Number(item.original_price) || Number(item.price) || 0,
-          quantity: Number(item.quantity) || 1,
-          total: Number(item.price) * Number(item.quantity)
-        })),
-        total: Number(total) || 0,
-        subtotal: Number(total) || 0,
+        products: stripeItems,
+        items: stripeItems,
+        total: totalFromStripe,
+        subtotal: subtotalFromStripe,
+        discount: discountFromStripe,
         payment_method: 'stripe',
         payment_status: 'completed',
         status: 'completed',
-        user_id: user?.id || 'local-user'
+        stripe_payment_intent_id: session_details.payment_intent_id,
+        user_id: currentUser.id,
+        metadata: {
+          stripe_session_id: sessionId,
+          customer_email: session_details.customer_email
+        }
       };
       
       // Guardar en localStorage
-      const existingSales = JSON.parse(localStorage.getItem('sales') || '[]');
-      existingSales.push(saleForLocalStorage);
-      localStorage.setItem('sales', JSON.stringify(existingSales));
-      console.log('✅ VENTA GUARDADA EN LOCALSTORAGE:', saleForLocalStorage);
+      const existingLocalSales = JSON.parse(localStorage.getItem('sales') || '[]');
       
-      // Actualizar reportes desde localStorage
-      const allLocalSales = JSON.parse(localStorage.getItem('sales') || '[]');
-      const totalVentas = allLocalSales.reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
-      const cantidadTickets = allLocalSales.length;
-      const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
+      // Verificar si ya existe esta venta para evitar duplicados
+      const alreadyExists = existingLocalSales.some((sale: any) => 
+        sale.stripe_payment_intent_id === session_details.payment_intent_id ||
+        sale.ticket_id === sessionId
+      );
       
-      // Calcular ventas del día y del mes
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      
-      const ventasDelDia = allLocalSales
-        .filter((sale: any) => {
-          const saleDate = new Date(sale.timestamp || sale.date).toISOString().split('T')[0];
-          return saleDate === todayStr;
-        })
-        .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
-      
-      const ventasDelMes = allLocalSales
-        .filter((sale: any) => {
-          const saleDate = new Date(sale.timestamp || sale.date);
-          return saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear;
-        })
-        .reduce((sum: number, sale: any) => sum + (Number(sale.total) || 0), 0);
-      
-      setReportes({ totalVentas, cantidadTickets, promedio, ventasDelDia, ventasDelMes });
-      
-      // CHECKPOINT FINAL: Crear el ticket visual con datos garantizados
-      console.log('🎫 INICIO CREACIÓN TICKET - Estado actual:');
-      console.log('  - Cart length:', cart.length);
-      console.log('  - Cart items:', cart.map(item => ({name: item.name, price: item.price, qty: item.quantity})));
-      console.log('  - Total calculado:', total);
-      console.log('  - saleData recibido:', saleData);
-      
-      // Verificar que el carrito no esté vacío antes de crear ticket
-      if (cart.length === 0) {
-        console.error('🚨 ERROR CRÍTICO: Carrito está vacío al crear ticket!');
-        console.error('  - Esto sugiere una condición de carrera o limpieza prematura');
-        return;
+      if (!alreadyExists) {
+        existingLocalSales.push(saleForLocalStorage);
+        localStorage.setItem('sales', JSON.stringify(existingLocalSales));
+        console.log('💾 Venta también guardada en localStorage como respaldo');
+      } else {
+        console.log('⚠️ Venta ya existe en localStorage, evitando duplicado');
       }
       
-      if (total <= 0) {
-        console.error('🚨 ERROR CRÍTICO: Total es 0 al crear ticket!');
-        console.error('  - Total actual:', total);
-        console.error('  - Esto sugiere un problema en el cálculo');
-        return;
-      }
+      console.log('✅ Venta creada exitosamente en base de datos y localStorage');
       
-      const guaranteedTicketData = {
-        ticket_id: saleData?.id || ticketId,
-        id: saleData?.id || `local-${ticketId}`,
-        date: saleData?.created_at ? new Date(saleData.created_at) : new Date(),
-        products: [...cart], // Clone profundo del carrito
-        total: Number(total), // Total ya calculado y validado
-        created_at: saleData?.created_at || new Date().toISOString(),
-        items: cart.map(item => ({
+      // Refrescar historial de ventas INMEDIATAMENTE
+      console.log('🔄 Actualizando sales refresh trigger...');
+      setSalesRefreshTrigger(prev => {
+        const newValue = prev + 1;
+        console.log('🔄 Sales refresh trigger actualizado de', prev, 'a', newValue);
+        return newValue;
+      });
+      
+      // También actualizar productos para que se muestren correctamente
+      console.log('🔄 Refrescando productos después del pago...');
+      await fetchProducts();
+      
+      // Construir y mostrar ticket con los datos de Stripe
+      const ticketData = {
+        ticket_id: sessionId,
+        id: sessionId,
+        date: new Date(),
+        products: stripeItems,
+        total: totalFromStripe,
+        subtotal: subtotalFromStripe,
+        discount: discountFromStripe,
+        created_at: new Date().toISOString(),
+        items: stripeItems.map((item: any) => ({
           id: item.id,
-          name: item.name || 'Producto',
-          price: Number(item.price) || 0,
-          original_price: Number(item.original_price) || Number(item.price) || 0,
-          quantity: Number(item.quantity) || 1
+          name: item.name,
+          price: item.price,
+          original_price: item.original_price || item.price,
+          quantity: item.quantity
         }))
       };
       
-      console.log('✅ TICKET CREADO EXITOSAMENTE:');
-      console.log('  - ticket_id:', guaranteedTicketData.ticket_id);
-      console.log('  - products count:', guaranteedTicketData.products.length);
-      console.log('  - items count:', guaranteedTicketData.items.length);
-      console.log('  - total:', guaranteedTicketData.total);
-      console.log('  - primer producto:', guaranteedTicketData.items[0]);
+      console.log('🎫 Mostrando ticket:', ticketData);
+      setTicket(ticketData);
       
-      setTicket(guaranteedTicketData);
+      // Mostrar mensaje de éxito
+      setToast({ type: 'success', message: '¡Pago procesado exitosamente!' });
       
-      console.log('🎫 TICKET SETTEADO - Verificación final:');
-      console.log('  - setTicket() ejecutado con éxito');
-      console.log('  - Data enviada a setTicket:', guaranteedTicketData);
+      // Limpiar carrito local después del pago exitoso
+      console.log('🧹 Limpiando carrito después del pago...');
+      clearCart();
+      console.log('✅ Carrito limpiado inmediatamente');
       
-      // ⚠️ IMPORTANTE: Limpiar carrito DESPUÉS de mostrar el ticket, no inmediatamente
-      // clearCart(); // Comentado - se limpiará cuando el usuario cierre el ticket
+      // Forzar actualización de la vista
+      console.log('🔄 Forzando re-renderizado...');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('sales-updated'));
+        console.log('📡 Evento sales-updated disparado');
+      }, 500);
       
     } catch (error) {
-      console.error('Error en el proceso post-pago:', error);
-      setPaying(false);
+      console.error('❌ Error al procesar pago:', error);
+      setToast({ 
+        type: 'error', 
+        message: 'Error al procesar el pago: ' + (error instanceof Error ? error.message : 'Error desconocido')
+      });
     }
   };
-
-  // ...existing code...
-
-  // ...existing code...
   const { theme, setTheme, getThemeClass } = useTheme();
   // Resto de estados
   const { products, loading, setProducts, fetchProducts } = useProductsContext();
@@ -765,14 +606,14 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
   
   useEffect(() => {
     const loadFavorites = async () => {
-      if (currentUser && !favoritesLoaded) {
-        const favorites = await UserSettingsManager.getFavoriteProducts(currentUser.id);
+      if (user && !favoritesLoaded) {
+        const favorites = await UserSettingsManager.getFavoriteProducts(user.id);
         setFavoriteIds(favorites);
         setFavoritesLoaded(true);
       }
     };
     loadFavorites();
-  }, [currentUser, favoritesLoaded]);
+  }, [user, favoritesLoaded]);
   const [orderNote, setOrderNote] = useState('');
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discount, setDiscount] = useState<number>(0);
@@ -784,11 +625,13 @@ const subtotal = cart.reduce((sum: number, item: Product & { quantity: number })
   const [showStripePayment, setShowStripePayment] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(preSelectedClient);
 const [ticket, setTicket] = useState<{ 
-  ticket_id?: number; 
+  ticket_id?: string; 
   id?: string; 
   date: string | Date; 
   products: (Product & { quantity: number })[]; 
   total: number;
+  subtotal?: number;
+  discount?: number;
   created_at?: string;
   items?: Array<{
     id: string;
@@ -1056,8 +899,8 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
                     <span className="font-semibold text-zinc-700 dark:text-zinc-200">{prod.name}</span>
                     <button onClick={() => addToCart(prod)} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-bold">Agregar</button>
                   </li>
-                ))
-              )}
+                )))
+              }
             </ul>
           </div>
         </div>
@@ -1275,8 +1118,8 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
                             
                             setFavoriteIds(updated);
                             
-                            if (currentUser) {
-                              await UserSettingsManager.setFavoriteProducts(currentUser.id, updated);
+                            if (user) {
+                              await UserSettingsManager.setFavoriteProducts(user.id, updated);
                             }
                           }}
                           aria-label="Favorito"
@@ -1457,13 +1300,7 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
             description: item.category || undefined
           }))}
           onClose={() => setShowStripePayment(false)}
-          onSuccess={() => {
-            console.log('💳 Pago de Stripe exitoso - NO limpiando carrito aún (se limpiará al cerrar ticket)');
-            console.log('📌 Carrito actual tras pago exitoso:', cart.length, 'items');
-            setShowStripePayment(false);
-            // NO llamar clearCart() aquí - el ticket necesita estos datos
-            // clearCart() se ejecutará cuando el usuario cierre el ticket
-          }}
+          onSuccess={handleStripePaymentSuccess}
           selectedClient={selectedClient}
         />
       )}
@@ -1481,7 +1318,7 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
               })}`}
               onClick={() => {
                 setTicket(null);
-                clearCart(); // Limpiar carrito cuando se cierra el ticket
+                // No limpiar carrito aquí, ya se limpia automáticamente después del pago
               }}
             >
               ×
@@ -1520,7 +1357,7 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
                   {new Date(ticket.date).toLocaleString()}
                 </div>
                 <div className={`text-xs mt-1 ${getThemeClass({dark: 'text-gray-500', light: 'text-gray-400'})}`}>
-                  Cajero: {currentUser?.email || 'Sistema'}
+                  Cajero: {user?.email || 'Sistema'}
                 </div>
               </div>
               

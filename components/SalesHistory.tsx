@@ -20,7 +20,11 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     d.setHours(0,0,0,0);
-    return d.toISOString().slice(0,10);
+    // Usar fecha local en formato YYYY-MM-DD
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   });
   const [showTicket, setShowTicket] = useState<Sale | null>(null);
   const [businessName, setBusinessName] = useState('Mi Negocio');
@@ -181,10 +185,28 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
     fetchSales();
   }, [userId, refreshTrigger]); // Incluir refreshTrigger como dependencia
 
+  // Escuchar eventos personalizados para refrescar
+  useEffect(() => {
+    const handleSalesUpdate = () => {
+      console.log('📡 Evento sales-updated recibido, refrescando...');
+      fetchSales();
+    };
+    
+    window.addEventListener('sales-updated', handleSalesUpdate);
+    return () => {
+      window.removeEventListener('sales-updated', handleSalesUpdate);
+    };
+  }, [fetchSales]);
+
   // Filtrar ventas por fecha seleccionada
   let filteredSales = sales.filter(sale => {
     const d = sale.created_at ? new Date(sale.created_at) : new Date();
-    return d.toISOString().slice(0,10) === selectedDate;
+    // Convertir a fecha local en formato YYYY-MM-DD
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const localDateString = `${year}-${month}-${day}`;
+    return localDateString === selectedDate;
   });
   if (limit && filteredSales.length > limit) {
     filteredSales = filteredSales.slice(0, limit);
@@ -255,8 +277,8 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
 
       {/* Modal para mostrar ticket mejorado */}
       {showTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-          <div className="bg-white text-black rounded-2xl shadow-2xl max-w-sm w-full mx-4 relative">
+        <div className={`${getThemeClass({dark:'bg-black bg-opacity-70',light:'bg-black bg-opacity-50'})} fixed inset-0 z-50 flex items-center justify-center p-4`}>
+          <div className={`${getThemeClass({dark:'bg-zinc-900 text-white',light:'bg-white text-black'})} rounded-2xl shadow-2xl max-w-sm w-full mx-4 relative`}>
             {/* Botón cerrar */}
             <button
               onClick={() => setShowTicket(null)}

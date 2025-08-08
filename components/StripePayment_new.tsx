@@ -17,7 +17,7 @@ interface StripePaymentProps {
     description?: string;
   }>;
   onClose?: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (sessionId: string) => void;
   selectedClient?: ClientAccount | null;
 }
 
@@ -61,6 +61,32 @@ export function StripePayment({ amount, items, onClose, onSuccess, selectedClien
     getUser();
   }, []);
 
+  // Listener para mensajes de la ventana de pago
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Verificar origen por seguridad
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (event.data.type === 'STRIPE_PAYMENT_SUCCESS') {
+        console.log('🎉 Mensaje de éxito recibido de ventana de pago:', event.data);
+        setPaymentStatus('completed');
+        setIsPolling(false);
+        
+        if (onSuccess && event.data.sessionId) {
+          onSuccess(event.data.sessionId);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [onSuccess]);
+
   // Función para verificar el estado del pago
   const checkPaymentStatus = async (sessionId: string) => {
     try {
@@ -82,50 +108,12 @@ export function StripePayment({ amount, items, onClose, onSuccess, selectedClien
       console.log('📊 Respuesta de verificación del servidor:', verifyData);
       
       if (verifyResponse.ok && verifyData.success && verifyData.payment_verified) {
-        console.log('✅ Pago verificado por el servidor, procesando venta en el cliente...');
-        console.log('📋 Datos recibidos del servidor:', verifyData);
-        
-        try {
-          // Importar createSale dinámicamente
-          const { createSale } = await import('../lib/sales');
-          
-          // Preparar datos del carrito desde la respuesta del servidor
-          const cartData = verifyData.cart_data;
-          const total = verifyData.total;
-          const stripePaymentIntentId = verifyData.stripe_payment_intent_id;
-          const metadata = verifyData.metadata;
-          
-          console.log('💾 CLIENTE: Guardando venta con datos verificados...');
-          console.log('💾 CLIENTE: cartData:', cartData);
-          console.log('💾 CLIENTE: total:', total);
-          console.log('💾 CLIENTE: userId:', currentUser?.id);
-          console.log('💾 CLIENTE: stripePaymentIntentId:', stripePaymentIntentId);
-          
-          if (currentUser && cartData && cartData.length > 0) {
-            const { data: saleData, error: saleError } = await createSale(cartData, total, currentUser.id, stripePaymentIntentId);
-            
-            if (saleError) {
-              console.error('❌ Error guardando venta en el cliente:', saleError);
-            } else {
-              console.log('✅ Venta guardada exitosamente en el cliente:', saleData);
-            }
-          } else {
-            console.warn('⚠️ Datos insuficientes para guardar venta en cliente');
-          }
-        } catch (clientError) {
-          console.error('❌ Error en el procesamiento del cliente:', clientError);
-        }
-        
-        // Cambiar estado y notificar éxito
+        // Pago confirmado por Stripe, notificar éxito
         setPaymentStatus('completed');
         setIsPolling(false);
-        
         if (onSuccess) {
-          setTimeout(() => {
-            onSuccess();
-          }, 1500); // Delay para mostrar el mensaje de éxito
+          setTimeout(() => onSuccess(sessionId), 1500);
         }
-        
         return true;
       } else {
         console.log('⏳ Pago aún no completado, continuando polling...');
