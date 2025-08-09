@@ -10,6 +10,8 @@ import { useTheme } from '../contexts/ThemeContext';
 
 interface StripePaymentProps {
   amount: number;
+  originalAmount?: number;
+  discountAmount?: number;
   items: Array<{
     name: string;
     price: number;
@@ -21,7 +23,7 @@ interface StripePaymentProps {
   selectedClient?: ClientAccount | null;
 }
 
-export function StripePayment({ amount, items, onClose, onSuccess, selectedClient }: StripePaymentProps) {
+export function StripePayment({ amount, originalAmount, discountAmount, items, onClose, onSuccess, selectedClient }: StripePaymentProps) {
   const [loading, setLoading] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +174,8 @@ export function StripePayment({ amount, items, onClose, onSuccess, selectedClien
       // Los datos del carrito se guardarán automáticamente en el backend cuando se cree la sesión
       const paymentData = {
         amount: amount,
+        originalAmount: originalAmount,
+        discountAmount: discountAmount,
         currency: 'usd',
         description: `Venta - ${items.length} producto(s)`,
         items: items,

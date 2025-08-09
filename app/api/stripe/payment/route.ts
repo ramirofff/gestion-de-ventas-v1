@@ -7,6 +7,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { 
       amount, 
+      originalAmount,
+      discountAmount,
       currency = 'usd', 
       description, 
       items = [],
@@ -31,18 +33,32 @@ export async function POST(request: NextRequest) {
     const defaultCancelUrl = `${request.nextUrl.origin}/payment/cancel`;
 
     // 🎯 DETECCIÓN DE DESCUENTOS
-    // Calcular total original de items vs amount recibido
-    const originalTotal = items.reduce((sum: number, item: any) => 
-      sum + (item.price * item.quantity), 0
-    );
-    const hasDiscount = Math.abs(originalTotal - amount) > 0.01; // Tolerancia de $0.01 por redondeo
-    const discountAmount = originalTotal - amount;
+    // Usar valores directos si están disponibles, o calcular como antes
+    let hasDiscount: boolean;
+    let finalDiscountAmount: number;
+    let originalTotal: number;
+    
+    if (originalAmount !== undefined && discountAmount !== undefined) {
+      // Usar valores directos del frontend
+      hasDiscount = discountAmount > 0.01;
+      finalDiscountAmount = discountAmount;
+      originalTotal = originalAmount;
+      console.log('✅ Usando descuento directo del frontend:', discountAmount);
+    } else {
+      // Calcular como antes para compatibilidad
+      originalTotal = items.reduce((sum: number, item: any) => 
+        sum + (item.price * item.quantity), 0
+      );
+      hasDiscount = Math.abs(originalTotal - amount) > 0.01;
+      finalDiscountAmount = originalTotal - amount;
+      console.log('⚠️ Calculando descuento automáticamente');
+    }
 
     console.log('💰 Análisis de precios:');
-    console.log('- Total original de items:', originalTotal);
-    console.log('- Amount recibido:', amount);
+    console.log('- Total original:', originalTotal);
+    console.log('- Amount final:', amount);
     console.log('- ¿Hay descuento?', hasDiscount);
-    console.log('- Descuento aplicado:', discountAmount);
+    console.log('- Descuento aplicado:', finalDiscountAmount);
 
     // Crear líneas de productos para Stripe
     let lineItems: any[];
@@ -58,7 +74,7 @@ export async function POST(request: NextRequest) {
             name: items.length > 1 
               ? `Venta con descuento (${items.length} productos)`
               : `${items[0].name} con descuento`,
-            description: `Total original: $${originalTotal.toFixed(2)} - Descuento: $${discountAmount.toFixed(2)}`
+            description: `Total original: $${originalTotal.toFixed(2)} - Descuento: $${finalDiscountAmount.toFixed(2)}`
           },
           unit_amount: Math.round(amount * 100), // Total con descuento
         },

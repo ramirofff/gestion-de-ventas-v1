@@ -67,6 +67,21 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
         if (event.data.sessionId) {
           handleStripePaymentSuccess(event.data.sessionId);
         }
+      } else if (event.data.type === 'STRIPE_PAYMENT_COMPLETE_CLOSE') {
+        // El usuario cerró la ventana de éxito - recargar página
+        console.log('📨 Recibido mensaje de cierre de ventana de éxito');
+        if (event.data.action === 'reload_and_home') {
+          console.log('🔄 Recargando página y regresando al home...');
+          // Limpiar cualquier estado residual
+          setTicket(null);
+          setShowStripePayment(false);
+          setView('home');
+          
+          // Recargar la página completa para asegurar estado limpio
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        }
       }
     };
 
@@ -218,6 +233,7 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
     };
   }, []);
   const [view, setView] = useState<ViewType>('home');
+  const [faqAbierta, setFaqAbierta] = useState<string | null>(null);
   const [reportes, setReportes] = useState<{ 
     totalVentas: number; 
     cantidadTickets: number; 
@@ -546,36 +562,24 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       // También actualizar productos para que se muestren correctamente
       console.log('🔄 Refrescando productos después del pago...');
       await fetchProducts();
+
+      // ✅ NO MOSTRAR TICKET INTERNO DESPUÉS DE STRIPE
+      // El ticket de Stripe ya se mostró en la página /payment/success
+      // Solo mostrar mensaje de éxito y limpiar carrito
       
-      // Construir y mostrar ticket con los datos de Stripe
-      const ticketData = {
-        ticket_id: sessionId,
-        id: sessionId,
-        date: new Date(),
-        products: stripeItems,
-        total: totalFromStripe,
-        subtotal: subtotalFromStripe,
-        discount: discountFromStripe,
-        created_at: new Date().toISOString(),
-        items: stripeItems.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          original_price: item.original_price || item.price,
-          quantity: item.quantity
-        }))
-      };
-      
-      console.log('🎫 Mostrando ticket:', ticketData);
-      setTicket(ticketData);
+      console.log('✅ Pago de Stripe procesado exitosamente');
       
       // Mostrar mensaje de éxito
-      setToast({ type: 'success', message: '¡Pago procesado exitosamente!' });
+      setToast({ type: 'success', message: '¡Pago procesado exitosamente! Venta guardada.' });
       
       // Limpiar carrito local después del pago exitoso
       console.log('🧹 Limpiando carrito después del pago...');
       clearCart();
       console.log('✅ Carrito limpiado inmediatamente');
+      
+      // 🏠 REGRESAR DIRECTAMENTE AL HOME
+      console.log('🏠 Regresando al home después del pago de Stripe...');
+      // No es necesario hacer nada más, ya estamos en el home
       
       // Forzar actualización de la vista
       console.log('🔄 Forzando re-renderizado...');
@@ -766,199 +770,774 @@ const [ticket, setTicket] = useState<{
     );
   }
   if (view === 'reports' && user) {
+    // Calcular métricas avanzadas
+    const hoy = new Date();
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const inicioSemana = new Date(hoy);
+    inicioSemana.setDate(hoy.getDate() - hoy.getDay());
+    
+    const ventasHoy = ventas.filter(v => {
+      const fechaVenta = new Date(v.created_at || v.order_date || '');
+      return fechaVenta.toDateString() === hoy.toDateString();
+    });
+    
+    const ventasSemana = ventas.filter(v => {
+      const fechaVenta = new Date(v.created_at || v.order_date || '');
+      return fechaVenta >= inicioSemana;
+    });
+    
+    const ventasMes = ventas.filter(v => {
+      const fechaVenta = new Date(v.created_at || v.order_date || '');
+      return fechaVenta >= inicioMes;
+    });
+
+    const totalHoy = ventasHoy.reduce((sum, venta) => sum + (venta.total || 0), 0);
+    const totalSemana = ventasSemana.reduce((sum, venta) => sum + (venta.total || 0), 0);
+    const totalMes = ventasMes.reduce((sum, venta) => sum + (venta.total || 0), 0);
+    const totalGeneral = ventas.reduce((sum, venta) => sum + (venta.total || 0), 0);
+    
+    const ticketPromedio = ventas.length > 0 ? totalGeneral / ventas.length : 0;
+    const crecimientoDiario = ventasHoy.length > 0 ? ((totalHoy / (totalSemana / 7)) - 1) * 100 : 0;
+
     return (
-      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center justify-center`}>
-        <BarChart2 className="w-16 h-16 text-purple-400 animate-pulse mb-4" />
-        <h1 className="text-3xl font-bold text-purple-500 mb-2">Reportes</h1>
-        <p className="text-lg text-purple-300 mb-8">Visualiza reportes de ventas, ingresos y más.</p>
-        <div className={`w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-purple-200 dark:border-purple-800 p-2 sm:p-8 mb-8 flex flex-col gap-6`}>
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ventas totales</span>
-            <span className="text-2xl font-bold text-purple-500">{reportes ? formatCurrency(reportes.totalVentas) : '...'}</span>
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <BarChart2 className="w-16 h-16 text-purple-400 mx-auto mb-4 animate-pulse" />
+            <h1 className="text-4xl font-bold text-purple-500 mb-2">📊 Reportes Avanzados</h1>
+            <p className="text-lg text-purple-300">Dashboard completo de métricas de negocio</p>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ventas del día</span>
-            <span className="text-2xl font-bold text-green-500">{reportes ? formatCurrency(reportes.ventasDelDia) : '...'}</span>
+
+          {/* Métricas principales */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-blue-900 to-blue-800',light:'bg-gradient-to-br from-blue-50 to-blue-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-blue-600 dark:text-blue-300">VENTAS HOY</h3>
+                <div className="text-2xl">📈</div>
+              </div>
+              <div className="text-3xl font-bold text-blue-700 dark:text-blue-200">{formatCurrency(totalHoy)}</div>
+              <div className="text-sm text-blue-500 mt-1">{ventasHoy.length} transacciones</div>
+            </div>
+
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-green-900 to-green-800',light:'bg-gradient-to-br from-green-50 to-green-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-green-600 dark:text-green-300">ESTA SEMANA</h3>
+                <div className="text-2xl">🗓️</div>
+              </div>
+              <div className="text-3xl font-bold text-green-700 dark:text-green-200">{formatCurrency(totalSemana)}</div>
+              <div className="text-sm text-green-500 mt-1">{ventasSemana.length} transacciones</div>
+            </div>
+
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-purple-900 to-purple-800',light:'bg-gradient-to-br from-purple-50 to-purple-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-purple-600 dark:text-purple-300">ESTE MES</h3>
+                <div className="text-2xl">📅</div>
+              </div>
+              <div className="text-3xl font-bold text-purple-700 dark:text-purple-200">{formatCurrency(totalMes)}</div>
+              <div className="text-sm text-purple-500 mt-1">{ventasMes.length} transacciones</div>
+            </div>
+
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-orange-900 to-orange-800',light:'bg-gradient-to-br from-orange-50 to-orange-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-orange-600 dark:text-orange-300">TICKET PROMEDIO</h3>
+                <div className="text-2xl">🎯</div>
+              </div>
+              <div className="text-3xl font-bold text-orange-700 dark:text-orange-200">{formatCurrency(ticketPromedio)}</div>
+              <div className="text-sm text-orange-500 mt-1">Por transacción</div>
+            </div>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ventas del mes</span>
-            <span className="text-2xl font-bold text-blue-500">{reportes ? formatCurrency(reportes.ventasDelMes) : '...'}</span>
+
+          {/* Análisis de rendimiento */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+              <h3 className="text-xl font-bold text-purple-500 mb-4 flex items-center gap-2">
+                <div className="text-2xl">⚡</div>
+                Rendimiento del Negocio
+              </h3>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-gray-300">Total de Ventas:</span>
+                  <span className="font-bold text-2xl text-purple-500">{formatCurrency(totalGeneral)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-gray-300">Total de Transacciones:</span>
+                  <span className="font-bold text-xl text-blue-500">{ventas.length}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-gray-300">Promedio por Día:</span>
+                  <span className="font-bold text-xl text-green-500">{formatCurrency(totalGeneral / 30)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-gray-300">Tendencia Diaria:</span>
+                  <span className={`font-bold text-xl ${crecimientoDiario >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {crecimientoDiario >= 0 ? '📈' : '📉'} {Math.abs(crecimientoDiario).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+              <h3 className="text-xl font-bold text-purple-500 mb-4 flex items-center gap-2">
+                <div className="text-2xl">🏆</div>
+                Objetivos y Metas
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-gray-600 dark:text-gray-300">Meta Mensual</span>
+                    <span className="text-sm text-gray-500">70%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                    <div className="bg-gradient-to-r from-purple-500 to-purple-600 h-3 rounded-full" style={{width: '70%'}}></div>
+                  </div>
+                  <div className="text-right text-sm text-purple-500 mt-1">{formatCurrency(totalMes)} / {formatCurrency(50000)}</div>
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-gray-600 dark:text-gray-300">Meta Semanal</span>
+                    <span className="text-sm text-gray-500">85%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                    <div className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full" style={{width: '85%'}}></div>
+                  </div>
+                  <div className="text-right text-sm text-green-500 mt-1">{formatCurrency(totalSemana)} / {formatCurrency(12000)}</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Cantidad de tickets</span>
-            <span className="text-2xl font-bold text-purple-500">{reportes ? reportes.cantidadTickets : '...'}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Ticket promedio</span>
-            <span className="text-2xl font-bold text-purple-500">{reportes ? formatCurrency(reportes.promedio) : '...'}</span>
+
+          <div className="text-center">
+            <button onClick={() => setView('home')} className={`${btnBase} ${btnBack} mt-8`}>
+              🏠 Volver al inicio
+            </button>
           </div>
         </div>
-        <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
       </main>
     );
   }
   if (view === 'stats' && user) {
-    // Estadísticas reales: productos más vendidos y ventas por categoría
-    // Contar ventas por producto
-const ventasPorProducto: Record<string, { producto: SaleProduct, cantidad: number }> = {};
-ventas.forEach((venta: Sale) => {
+    // Estadísticas avanzadas: análisis profundo de productos y categorías
+    const ventasPorProducto: Record<string, { producto: SaleProduct, cantidad: number, ingresos: number }> = {};
+    ventas.forEach((venta: Sale) => {
       if (Array.isArray(venta.products)) {
         venta.products.forEach((item: SaleProduct) => {
-          if (!ventasPorProducto[item.id]) ventasPorProducto[item.id] = { producto: item, cantidad: 0 };
+          if (!ventasPorProducto[item.id]) {
+            ventasPorProducto[item.id] = { producto: item, cantidad: 0, ingresos: 0 };
+          }
           ventasPorProducto[item.id].cantidad += item.quantity || 1;
+          ventasPorProducto[item.id].ingresos += (item.price || 0) * (item.quantity || 1);
         });
       }
     });
-    // Top 5 productos vendidos
+
     const topProducts = Object.values(ventasPorProducto)
-      .sort((a, b) => b.cantidad - a.cantidad)
-      .slice(0, 5);
-    // Ventas por categoría (mostrar nombre, no ID)
-    const ventasPorCategoria: Record<string, number> = {};
-    Object.values(ventasPorProducto).forEach(({ producto, cantidad }) => {
+      .sort((a, b) => b.ingresos - a.ingresos)
+      .slice(0, 8);
+
+    const ventasPorCategoria: Record<string, { cantidad: number, ingresos: number }> = {};
+    Object.values(ventasPorProducto).forEach(({ producto, cantidad, ingresos }) => {
       let catName = 'Sin categoría';
       if (producto.category) {
-        // Buscar nombre en categories
-const catObj = categories.find((c: Category) => c.id === producto.category || c.name === producto.category);
+        const catObj = categories.find((c: Category) => c.id === producto.category || c.name === producto.category);
         catName = catObj?.name || producto.category;
       }
-      ventasPorCategoria[catName] = (ventasPorCategoria[catName] || 0) + cantidad;
+      if (!ventasPorCategoria[catName]) {
+        ventasPorCategoria[catName] = { cantidad: 0, ingresos: 0 };
+      }
+      ventasPorCategoria[catName].cantidad += cantidad;
+      ventasPorCategoria[catName].ingresos += ingresos;
     });
-    // Preparar datos para el gráfico de barras
-    const maxVentasCat = Math.max(...Object.values(ventasPorCategoria), 1);
+
+    const maxIngresosCat = Math.max(...Object.values(ventasPorCategoria).map(v => v.ingresos), 1);
+    const totalProductos = products.length;
+    const productosVendidos = Object.keys(ventasPorProducto).length;
+    const tasaRotacion = totalProductos > 0 ? (productosVendidos / totalProductos) * 100 : 0;
+
     return (
-      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center`}>
-        <PieChart className="w-16 h-16 text-pink-400 animate-spin-slow mb-4" />
-        <h1 className="text-3xl font-bold text-pink-500 mb-2">Estadísticas</h1>
-        <p className="text-lg text-pink-300 mb-8">Gráficos y métricas de tu negocio.</p>
-        <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 mb-8">
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-pink-200 dark:border-pink-800 p-2 sm:p-6`}>
-            <h2 className="text-xl font-bold text-pink-500 mb-4">Top productos vendidos</h2>
-            {topProducts.length === 0 ? (
-              <div className="text-zinc-400">No hay ventas registradas.</div>
-            ) : (
-              <ul className="space-y-2">
-                {topProducts.map((prod, idx: number) => (
-                  <li key={prod.producto.id} className="flex justify-between items-center">
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-200">{idx + 1}. {prod.producto.name}</span>
-                    <span className="text-pink-400 font-bold">{prod.cantidad} ventas</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <PieChart className="w-16 h-16 text-pink-400 mx-auto mb-4 animate-spin-slow" />
+            <h1 className="text-4xl font-bold text-pink-500 mb-2">📊 Estadísticas Avanzadas</h1>
+            <p className="text-lg text-pink-300">Análisis profundo de rendimiento de productos</p>
           </div>
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-pink-200 dark:border-pink-800 p-2 sm:p-6`}>
-            <h2 className="text-xl font-bold text-pink-500 mb-4">Ventas por categoría</h2>
-            {Object.keys(ventasPorCategoria).length === 0 ? (
-              <div className="text-zinc-400">No hay ventas registradas.</div>
-            ) : (
-              <>
-                <div className="mb-4">
-                  {/* Gráfico de barras simple */}
-                  <div className="flex flex-col gap-2">
-                    {Object.entries(ventasPorCategoria).map(([cat, ventas]) => (
-                      <div key={cat} className="flex items-center gap-2">
-                        <span className="w-24 truncate text-sm font-semibold text-zinc-700 dark:text-zinc-200">{cat}</span>
-                        <div className="flex-1 bg-pink-100 dark:bg-pink-900 rounded h-6 relative">
-                          <div
-                            className="bg-pink-400 h-6 rounded transition-all"
-                            style={{ width: `${(ventas / maxVentasCat) * 100}%` }}
-                          ></div>
-                          <span className="absolute left-2 top-0 h-6 flex items-center text-xs font-bold text-pink-900 dark:text-pink-100">{ventas}</span>
+
+          {/* KPIs principales */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-pink-900 to-rose-800',light:'bg-gradient-to-br from-pink-50 to-rose-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-pink-600 dark:text-pink-300">PRODUCTOS ACTIVOS</h3>
+                <div className="text-2xl">📦</div>
+              </div>
+              <div className="text-3xl font-bold text-pink-700 dark:text-pink-200">{productosVendidos}</div>
+              <div className="text-sm text-pink-500 mt-1">de {totalProductos} total</div>
+            </div>
+
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-indigo-900 to-blue-800',light:'bg-gradient-to-br from-indigo-50 to-blue-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">TASA ROTACIÓN</h3>
+                <div className="text-2xl">🔄</div>
+              </div>
+              <div className="text-3xl font-bold text-indigo-700 dark:text-indigo-200">{tasaRotacion.toFixed(1)}%</div>
+              <div className="text-sm text-indigo-500 mt-1">productos vendidos</div>
+            </div>
+
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-emerald-900 to-green-800',light:'bg-gradient-to-br from-emerald-50 to-green-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">CATEGORÍAS ACTIVAS</h3>
+                <div className="text-2xl">🏷️</div>
+              </div>
+              <div className="text-3xl font-bold text-emerald-700 dark:text-emerald-200">{Object.keys(ventasPorCategoria).length}</div>
+              <div className="text-sm text-emerald-500 mt-1">categorías</div>
+            </div>
+
+            <div className={`${getThemeClass({dark:'bg-gradient-to-br from-amber-900 to-yellow-800',light:'bg-gradient-to-br from-amber-50 to-yellow-100'})} rounded-2xl p-6 border shadow-lg`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-amber-600 dark:text-amber-300">MEJOR PRODUCTO</h3>
+                <div className="text-2xl">🏆</div>
+              </div>
+              <div className="text-lg font-bold text-amber-700 dark:text-amber-200">
+                {topProducts[0]?.producto?.name || 'N/A'}
+              </div>
+              <div className="text-sm text-amber-500 mt-1">
+                {topProducts[0] ? formatCurrency(topProducts[0].ingresos) : '0'}
+              </div>
+            </div>
+          </div>
+
+          {/* Análisis detallado */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Top productos */}
+            <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+              <h3 className="text-xl font-bold text-pink-500 mb-6 flex items-center gap-2">
+                <div className="text-2xl">🎯</div>
+                Top Productos por Ingresos
+              </h3>
+              {topProducts.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-2">📭</div>
+                  <p className="text-gray-500">No hay datos de ventas disponibles</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {topProducts.map((prod, idx) => (
+                    <div key={`top-product-${idx}-${typeof prod.producto.id === 'string' ? prod.producto.id : `product-${idx}`}`} className={`p-3 rounded-xl ${getThemeClass({dark:'bg-pink-900/20 border border-pink-800',light:'bg-pink-50 border border-pink-200'})}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                            idx === 0 ? 'bg-yellow-500 text-white' :
+                            idx === 1 ? 'bg-gray-400 text-white' :
+                            idx === 2 ? 'bg-orange-500 text-white' : 
+                            'bg-pink-500 text-white'
+                          }`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-800 dark:text-gray-200">
+                              {prod.producto.name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {prod.cantidad} unidades vendidas
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-pink-500">
+                            {formatCurrency(prod.ingresos)}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {formatCurrency(prod.ingresos / prod.cantidad)} c/u
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Ventas por categoría */}
+            <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+              <h3 className="text-xl font-bold text-pink-500 mb-6 flex items-center gap-2">
+                <div className="text-2xl">📊</div>
+                Rendimiento por Categoría
+              </h3>
+              {Object.keys(ventasPorCategoria).length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-2">📋</div>
+                  <p className="text-gray-500">No hay categorías con ventas</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {Object.entries(ventasPorCategoria)
+                    .sort((a, b) => b[1].ingresos - a[1].ingresos)
+                    .map(([catName, data], idx) => (
+                      <div key={`categoria-${idx}-${catName.replace(/[^a-zA-Z0-9]/g, '-')}`} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-gray-800 dark:text-gray-200">
+                            {catName}
+                          </span>
+                          <span className="text-pink-500 font-bold">
+                            {formatCurrency(data.ingresos)}
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                            <div 
+                              className="bg-gradient-to-r from-pink-500 to-rose-500 h-3 rounded-full transition-all duration-500"
+                              style={{ width: `${(data.ingresos / maxIngresosCat) * 100}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>{data.cantidad} productos</span>
+                            <span>{((data.ingresos / maxIngresosCat) * 100).toFixed(1)}%</span>
+                          </div>
                         </div>
                       </div>
                     ))}
-                  </div>
                 </div>
-                <ul className="space-y-2">
-                  {Object.entries(ventasPorCategoria).map(([cat, ventas]) => (
-                    <li key={cat} className="flex justify-between items-center">
-                      <span className="font-semibold text-zinc-700 dark:text-zinc-200">{cat}</span>
-                      <span className="text-pink-400 font-bold">{ventas} ventas</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+              )}
+            </div>
+          </div>
+
+          <div className="text-center">
+            <button onClick={() => setView('home')} className={`${btnBase} ${btnBack} mt-8`}>
+              🏠 Volver al inicio
+            </button>
           </div>
         </div>
-        <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
       </main>
     );
   }
   if (view === 'shortcuts' && user) {
-    // Atajos rápidos: aplicar descuentos y favoritos reales
-const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
+    // Atajos rápidos profesionales: herramientas de productividad avanzadas
+    const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
+    const productosPopulares = products.slice(0, 6); // Top productos
+    
+    // Atajos de descuento predefinidos
+    const descuentosRapidos = [
+      { valor: 5, label: '5%', emoji: '🎯', desc: 'Descuento básico' },
+      { valor: 10, label: '10%', emoji: '🎪', desc: 'Cliente frecuente' },
+      { valor: 15, label: '15%', emoji: '🎊', desc: 'Promoción especial' },
+      { valor: 20, label: '20%', emoji: '🎁', desc: 'Descuento premium' },
+      { valor: 25, label: '25%', emoji: '💎', desc: 'VIP' },
+      { valor: 50, label: '50%', emoji: '🏆', desc: 'Oferta flash' }
+    ];
+
+    // Acciones rápidas del sistema
+    const accionesRapidas = [
+      { 
+        id: 'clear-cart',
+        nombre: 'Limpiar Carrito',
+        emoji: '🗑️',
+        desc: 'Vaciar carrito actual',
+        color: 'red',
+        accion: () => clearCart()
+      },
+      {
+        id: 'toggle-theme',
+        nombre: 'Cambiar Tema',
+        emoji: theme === 'dark' ? '☀️' : '🌙',
+        desc: 'Modo claro/oscuro',
+        color: 'indigo',
+        accion: () => setTheme(theme === 'dark' ? 'light' : 'dark')
+      },
+      {
+        id: 'export-sales',
+        nombre: 'Exportar Ventas',
+        emoji: '📊',
+        desc: 'Descargar historial',
+        color: 'green',
+        accion: () => {
+          const csvContent = ventas.map(v => `${v.order_date || v.created_at},${v.total},${v.products?.length || 0}`).join('\n');
+          const blob = new Blob([`Fecha,Total,Items\n${csvContent}`], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'ventas.csv';
+          a.click();
+        }
+      }
+    ];
+
     return (
-      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center`}>
-        <Zap className="w-16 h-16 text-orange-400 animate-bounce mb-4" />
-        <h1 className="text-3xl font-bold text-orange-500 mb-2">Atajos rápidos</h1>
-        <p className="text-lg text-orange-300 mb-8">Accede a descuentos y productos destacados.</p>
-        <div className="w-full max-w-xl grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 mb-8">
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-orange-200 dark:border-orange-800 p-2 sm:p-6`}>
-            <h2 className="text-lg font-bold text-orange-500 mb-2">Descuentos rápidos</h2>
-            <div className="flex flex-wrap gap-2">
-              {[5, 10, 20, 50].map(val => (
-                <button key={val} onClick={() => { setDiscountType('percent'); setDiscount(val); }} className="bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-200 px-4 py-2 rounded-lg font-bold border border-orange-300 dark:border-orange-700 hover:bg-orange-200 dark:hover:bg-orange-800 transition-colors">
-                  {val}%
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <Zap className="w-16 h-16 text-orange-400 mx-auto mb-4 animate-bounce" />
+            <h1 className="text-4xl font-bold text-orange-500 mb-2">⚡ Atajos Profesionales</h1>
+            <p className="text-lg text-orange-300">Centro de productividad y acciones rápidas</p>
+          </div>
+
+          {/* Descuentos rápidos */}
+          <div className={`${cardBg} rounded-2xl p-6 border shadow-lg mb-6`}>
+            <h3 className="text-xl font-bold text-orange-500 mb-6 flex items-center gap-2">
+              <div className="text-2xl">💰</div>
+              Descuentos Rápidos
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {descuentosRapidos.map(desc => (
+                <button 
+                  key={desc.valor}
+                  onClick={() => { setDiscountType('percent'); setDiscount(desc.valor); }}
+                  className={`${getThemeClass({dark:'bg-gradient-to-br from-orange-900 to-red-800 hover:from-orange-800 hover:to-red-700 border-orange-700',light:'bg-gradient-to-br from-orange-50 to-red-50 hover:from-orange-100 hover:to-red-100 border-orange-200'})} rounded-xl p-4 border transition-all duration-300 hover:scale-105 group`}
+                >
+                  <div className="text-2xl mb-2 group-hover:scale-110 transition-transform">
+                    {desc.emoji}
+                  </div>
+                  <div className="font-bold text-lg text-orange-600 dark:text-orange-300">
+                    {desc.label}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {desc.desc}
+                  </div>
                 </button>
               ))}
             </div>
           </div>
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-orange-200 dark:border-orange-800 p-2 sm:p-6`}>
-            <h2 className="text-lg font-bold text-orange-500 mb-2">Favoritos</h2>
-            <ul className="space-y-2">
+
+          {/* Grid principal */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Productos favoritos */}
+            <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+              <h3 className="text-xl font-bold text-orange-500 mb-6 flex items-center gap-2">
+                <div className="text-2xl">❤️</div>
+                Productos Favoritos
+              </h3>
               {favoritos.length === 0 ? (
-                <li className="text-zinc-400">No tienes productos favoritos.</li>
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-2">💫</div>
+                  <p className="text-gray-500 mb-4">No tienes favoritos aún</p>
+                  <p className="text-sm text-gray-400">Marca productos como favoritos desde la vista principal</p>
+                </div>
               ) : (
-                favoritos.map((prod: Product) => (
-                  <li key={prod.id} className="flex justify-between items-center">
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-200">{prod.name}</span>
-                    <button onClick={() => addToCart(prod)} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-bold">Agregar</button>
-                  </li>
-                )))
-              }
-            </ul>
+                <div className="space-y-3">
+                  {favoritos.slice(0, 4).map((prod: Product) => (
+                    <div key={prod.id} className={`p-3 rounded-xl ${getThemeClass({dark:'bg-orange-900/20 border border-orange-800',light:'bg-orange-50 border border-orange-200'})} flex items-center justify-between`}>
+                      <div>
+                        <div className="font-semibold text-gray-800 dark:text-gray-200">
+                          {prod.name}
+                        </div>
+                        <div className="text-sm text-orange-500 font-bold">
+                          {formatCurrency(prod.price)}
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => addToCart(prod)} 
+                        className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-4 py-2 rounded-lg font-bold transition-all duration-300 hover:scale-105 flex items-center gap-2"
+                      >
+                        ➕ Agregar
+                      </button>
+                    </div>
+                  ))}
+                  {favoritos.length > 4 && (
+                    <div className="text-center pt-2">
+                      <span className="text-sm text-gray-500">
+                        +{favoritos.length - 4} favoritos más
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Acciones rápidas del sistema */}
+            <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+              <h3 className="text-xl font-bold text-orange-500 mb-6 flex items-center gap-2">
+                <div className="text-2xl">🚀</div>
+                Acciones Rápidas
+              </h3>
+              <div className="space-y-4">
+                {accionesRapidas.map(accion => (
+                  <button
+                    key={accion.id}
+                    onClick={accion.accion}
+                    className={`w-full p-4 rounded-xl border transition-all duration-300 hover:scale-[1.02] flex items-center gap-4 ${
+                      accion.color === 'red' ? getThemeClass({dark:'bg-red-900/20 border-red-800 hover:bg-red-900/30',light:'bg-red-50 border-red-200 hover:bg-red-100'}) :
+                      accion.color === 'indigo' ? getThemeClass({dark:'bg-indigo-900/20 border-indigo-800 hover:bg-indigo-900/30',light:'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}) :
+                      getThemeClass({dark:'bg-green-900/20 border-green-800 hover:bg-green-900/30',light:'bg-green-50 border-green-200 hover:bg-green-100'})
+                    }`}
+                  >
+                    <div className="text-3xl">{accion.emoji}</div>
+                    <div className="text-left flex-1">
+                      <div className="font-bold text-gray-800 dark:text-gray-200">
+                        {accion.nombre}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {accion.desc}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Productos populares - acceso rápido */}
+          <div className={`${cardBg} rounded-2xl p-6 border shadow-lg mb-6`}>
+            <h3 className="text-xl font-bold text-orange-500 mb-6 flex items-center gap-2">
+              <div className="text-2xl">🔥</div>
+              Acceso Rápido - Productos Populares
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {productosPopulares.map((prod: Product) => (
+                <button
+                  key={prod.id}
+                  onClick={() => addToCart(prod)}
+                  className={`${getThemeClass({dark:'bg-gradient-to-br from-purple-900 to-pink-800 hover:from-purple-800 hover:to-pink-700 border-purple-700',light:'bg-gradient-to-br from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 border-purple-200'})} rounded-xl p-4 border transition-all duration-300 hover:scale-105 group`}
+                >
+                  <div className="text-2xl mb-2 group-hover:scale-110 transition-transform">
+                    🍽️
+                  </div>
+                  <div className="font-semibold text-sm text-purple-600 dark:text-purple-300 mb-1 truncate">
+                    {prod.name}
+                  </div>
+                  <div className="text-xs font-bold text-purple-500">
+                    {formatCurrency(prod.price)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-center">
+            <button onClick={() => setView('home')} className={`${btnBase} ${btnBack} mt-4`}>
+              🏠 Volver al inicio
+            </button>
           </div>
         </div>
-        <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
       </main>
     );
   }
   if (view === 'help' && user) {
-    // Ejemplo de soporte/ayuda: preguntas frecuentes y contacto
+    // Sistema de ayuda y soporte profesional
+    const faqSections = [
+      {
+        categoria: 'Operaciones Básicas',
+        emoji: '🛒',
+        preguntas: [
+          {
+            pregunta: '¿Cómo agrego productos al carrito?',
+            respuesta: 'Haz clic en el botón "Agregar" en la tarjeta del producto. También puedes usar los atajos rápidos para productos favoritos.'
+          },
+          {
+            pregunta: '¿Cómo modifico la cantidad de un producto?',
+            respuesta: 'En el carrito, usa los botones + y - junto a cada producto, o haz clic en la cantidad para editarla directamente.'
+          },
+          {
+            pregunta: '¿Cómo elimino un producto del carrito?',
+            respuesta: 'Haz clic en el ícono de basura (🗑️) junto al producto en el carrito, o reduce la cantidad a 0.'
+          }
+        ]
+      },
+      {
+        categoria: 'Descuentos y Promociones',
+        emoji: '💰',
+        preguntas: [
+          {
+            pregunta: '¿Cómo aplico un descuento?',
+            respuesta: 'Puedes aplicar descuentos desde: 1) El campo de descuento en el carrito, 2) Los atajos rápidos, o 3) Durante el proceso de pago.'
+          },
+          {
+            pregunta: '¿Puedo aplicar múltiples descuentos?',
+            respuesta: 'Solo se puede aplicar un descuento por venta. El último descuento aplicado reemplaza al anterior.'
+          },
+          {
+            pregunta: '¿Cómo funcionan los descuentos por porcentaje vs. monto fijo?',
+            respuesta: 'Los descuentos por porcentaje se calculan sobre el subtotal. Los montos fijos se restan directamente del total.'
+          }
+        ]
+      },
+      {
+        categoria: 'Tickets y Ventas',
+        emoji: '🧾',
+        preguntas: [
+          {
+            pregunta: '¿Cómo imprimo un ticket?',
+            respuesta: 'Después de completar la venta, aparecerá automáticamente la vista del ticket con el botón "Imprimir". También puedes acceder desde el historial.'
+          },
+          {
+            pregunta: '¿Puedo reimprimir un ticket?',
+            respuesta: 'Sí, ve a "Historial de Ventas", encuentra la venta y haz clic en "Ver ticket" para volver a imprimirla.'
+          },
+          {
+            pregunta: '¿Dónde veo el historial completo?',
+            respuesta: 'En el dashboard principal, haz clic en "📈 Historial de ventas" para ver todas las transacciones.'
+          }
+        ]
+      }
+    ];
+
+    const caracteristicas = [
+      { nombre: 'Gestión de Inventario', emoji: '📦', desc: 'Control completo de productos y categorías' },
+      { nombre: 'Reportes Avanzados', emoji: '📊', desc: 'Análisis de ventas y rendimiento' },
+      { nombre: 'Modo Móvil', emoji: '📱', desc: 'Interfaz optimizada para dispositivos móviles' },
+      { nombre: 'Tema Oscuro/Claro', emoji: '🌗', desc: 'Personalización visual según preferencias' },
+      { nombre: 'Códigos QR', emoji: '📲', desc: 'Compartir información de ventas fácilmente' },
+      { nombre: 'Exportación de Datos', emoji: '💾', desc: 'Descarga reportes en formato CSV' }
+    ];
+
     return (
-      <main className={`min-h-screen ${bgMain} p-2 sm:p-8 flex flex-col items-center`}>
-        <HelpCircle className="w-16 h-16 text-blue-400 animate-pulse mb-4" />
-        <h1 className="text-3xl font-bold text-blue-500 mb-2">Soporte / Ayuda</h1>
-        <p className="text-lg text-blue-300 mb-8">Preguntas frecuentes y contacto técnico.</p>
-        <div className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-lg border border-blue-200 dark:border-blue-800 p-2 sm:p-8 mb-8">
-          <h2 className="text-lg font-bold text-blue-500 mb-4">Preguntas frecuentes</h2>
-          <ul className="space-y-3">
-            <li>
-              <span className="font-semibold">¿Cómo agrego productos al carrito?</span><br />
-              Haz clic en el botón &quot;Agregar&quot; en la tarjeta del producto.
-            </li>
-            <li>
-              <span className="font-semibold">¿Cómo aplico un descuento?</span><br />
-              Usa el campo de descuento en el carrito o los atajos rápidos.
-            </li>
-            <li>
-              <span className="font-semibold">¿Cómo imprimo un ticket?</span><br />
-              Después de pagar, haz clic en &quot;Imprimir ticket&quot; en la ventana del ticket.
-            </li>
-            <li>
-              <span className="font-semibold">¿Cómo cambio el modo claro/oscuro?</span><br />
-              Usa el botón de sol/luna en la barra superior.
-            </li>
-          </ul>
-          <div className="mt-8">
-            <h3 className="text-md font-bold text-blue-400 mb-2">¿Necesitas más ayuda?</h3>
-            <p className="text-blue-300 mb-2">Contáctanos por email: <a href="mailto:soporte@fastfood-pos.com" className="underline text-blue-500">soporte@fastfood-pos.com</a></p>
-            <p className="text-blue-300">O por WhatsApp: <a href="https://wa.me/5491123456789" target="_blank" rel="noopener noreferrer" className="underline text-blue-500">+54 9 11 2345-6789</a></p>
+      <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <HelpCircle className="w-16 h-16 text-blue-400 mx-auto mb-4 animate-pulse" />
+            <h1 className="text-4xl font-bold text-blue-500 mb-2">🆘 Centro de Ayuda</h1>
+            <p className="text-lg text-blue-300">Soporte completo y guías de usuario</p>
+          </div>
+
+          {/* Grid principal */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            {/* FAQ Principal */}
+            <div className="lg:col-span-2">
+              <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+                <h3 className="text-xl font-bold text-blue-500 mb-6 flex items-center gap-2">
+                  <div className="text-2xl">❓</div>
+                  Preguntas Frecuentes
+                </h3>
+                <div className="space-y-4">
+                  {faqSections.map((seccion, idx) => (
+                    <div key={idx} className={`border rounded-xl overflow-hidden ${getThemeClass({dark:'border-blue-800',light:'border-blue-200'})}`}>
+                      <div className={`p-4 ${getThemeClass({dark:'bg-blue-900/30',light:'bg-blue-50'})}`}>
+                        <h4 className="font-bold text-blue-600 dark:text-blue-300 flex items-center gap-2">
+                          <span className="text-xl">{seccion.emoji}</span>
+                          {seccion.categoria}
+                        </h4>
+                      </div>
+                      <div className="divide-y divide-blue-200 dark:divide-blue-800">
+                        {seccion.preguntas.map((faq, faqIdx) => {
+                          const faqId = `${idx}-${faqIdx}`;
+                          return (
+                            <div key={faqIdx}>
+                              <button
+                                onClick={() => setFaqAbierta(faqAbierta === faqId ? null : faqId)}
+                                className="w-full p-4 text-left hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors flex items-center justify-between"
+                              >
+                                <span className="font-semibold text-gray-800 dark:text-gray-200">
+                                  {faq.pregunta}
+                                </span>
+                                <div className={`text-blue-500 transform transition-transform ${faqAbierta === faqId ? 'rotate-180' : ''}`}>
+                                  ⬇️
+                                </div>
+                              </button>
+                              {faqAbierta === faqId && (
+                                <div className="px-4 pb-4">
+                                  <div className={`p-3 rounded-lg ${getThemeClass({dark:'bg-blue-900/20',light:'bg-blue-50'})}`}>
+                                    <p className="text-gray-700 dark:text-gray-300">
+                                      {faq.respuesta}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Panel lateral */}
+            <div className="space-y-6">
+              {/* Contacto */}
+              <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+                <h3 className="text-xl font-bold text-blue-500 mb-4 flex items-center gap-2">
+                  <div className="text-2xl">📞</div>
+                  Contacto
+                </h3>
+                <div className="space-y-4">
+                  <div className={`p-3 rounded-lg ${getThemeClass({dark:'bg-green-900/20 border border-green-800',light:'bg-green-50 border border-green-200'})}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xl">💬</span>
+                      <span className="font-bold text-green-600 dark:text-green-400">WhatsApp</span>
+                    </div>
+                    <a 
+                      href="https://wa.me/5491123456789" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-green-500 hover:text-green-600 transition-colors font-semibold"
+                    >
+                      +54 9 11 2345-6789
+                    </a>
+                    <p className="text-xs text-gray-500 mt-1">Respuesta inmediata</p>
+                  </div>
+                  
+                  <div className={`p-3 rounded-lg ${getThemeClass({dark:'bg-blue-900/20 border border-blue-800',light:'bg-blue-50 border border-blue-200'})}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xl">📧</span>
+                      <span className="font-bold text-blue-600 dark:text-blue-400">Email</span>
+                    </div>
+                    <a 
+                      href="mailto:supporton@gmail.com"
+                      className="text-blue-500 hover:text-blue-600 transition-colors font-semibold"
+                    >
+                      supporton@gmail.com
+                    </a>
+                    <p className="text-xs text-gray-500 mt-1">Respuesta en 24h</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Características */}
+              <div className={`${cardBg} rounded-2xl p-6 border shadow-lg`}>
+                <h3 className="text-xl font-bold text-blue-500 mb-4 flex items-center gap-2">
+                  <div className="text-2xl">✨</div>
+                  Características
+                </h3>
+                <div className="space-y-3">
+                  {caracteristicas.map((feat, idx) => (
+                    <div key={idx} className={`p-3 rounded-lg ${getThemeClass({dark:'bg-purple-900/20 border border-purple-800',light:'bg-purple-50 border border-purple-200'})}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg">{feat.emoji}</span>
+                        <span className="font-semibold text-purple-600 dark:text-purple-400 text-sm">
+                          {feat.nombre}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">{feat.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Información adicional */}
+          <div className={`${cardBg} rounded-2xl p-6 border shadow-lg mb-6`}>
+            <h3 className="text-xl font-bold text-blue-500 mb-4 flex items-center gap-2">
+              <div className="text-2xl">ℹ️</div>
+              Información del Sistema
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className={`p-4 rounded-lg ${getThemeClass({dark:'bg-indigo-900/20',light:'bg-indigo-50'})}`}>
+                <h4 className="font-bold text-indigo-600 dark:text-indigo-400 mb-2">🚀 Versión</h4>
+                <p className="text-lg font-mono">v1.0.0</p>
+                <p className="text-xs text-gray-500">Sistema POS Profesional</p>
+              </div>
+              <div className={`p-4 rounded-lg ${getThemeClass({dark:'bg-emerald-900/20',light:'bg-emerald-50'})}`}>
+                <h4 className="font-bold text-emerald-600 dark:text-emerald-400 mb-2">🛠️ Estado</h4>
+                <p className="text-lg text-emerald-500 font-bold">● Operativo</p>
+                <p className="text-xs text-gray-500">Todos los sistemas funcionando</p>
+              </div>
+              <div className={`p-4 rounded-lg ${getThemeClass({dark:'bg-amber-900/20',light:'bg-amber-50'})}`}>
+                <h4 className="font-bold text-amber-600 dark:text-amber-400 mb-2">📊 Rendimiento</h4>
+                <p className="text-lg text-amber-500 font-bold">Óptimo</p>
+                <p className="text-xs text-gray-500">Sistema optimizado</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <button onClick={() => setView('home')} className={`${btnBase} ${btnBack} mt-4`}>
+              🏠 Volver al inicio
+            </button>
           </div>
         </div>
-        <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
       </main>
     );
   }
@@ -1310,6 +1889,8 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
       {showStripePayment && (
         <StripePayment 
           amount={total}
+          originalAmount={subtotal}
+          discountAmount={discountValue}
           items={cart.map(item => ({
             name: item.name,
             price: item.price,

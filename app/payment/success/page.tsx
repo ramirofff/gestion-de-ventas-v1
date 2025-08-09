@@ -32,9 +32,22 @@ export default function PaymentSuccessPage() {
       return;
     }
 
+    // Timeout de seguridad para evitar carga infinita
+    const timeoutId = setTimeout(() => {
+      if (loading) {
+        console.error('⏰ Timeout: La verificación del pago está tomando demasiado tiempo');
+        setError('La verificación del pago está tomando demasiado tiempo. Por favor, verifica tu historial de compras.');
+        setLoading(false);
+      }
+    }, 15000); // 15 segundos de timeout
+
     const processPaymentSuccess = async () => {
       try {
         console.log('🔍 Procesando pago exitoso en nueva pestaña:', sessionId);
+        
+        // Agregar timeout a la petición fetch
+        const controller = new AbortController();
+        const fetchTimeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos
         
         const response = await fetch('/api/stripe/payment/status', {
           method: 'POST',
@@ -44,12 +57,19 @@ export default function PaymentSuccessPage() {
           body: JSON.stringify({ 
             session_id: sessionId 
           }),
+          signal: controller.signal
         });
+
+        clearTimeout(fetchTimeoutId);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
 
         const data = await response.json();
         
         if (!data.success) {
-          throw new Error(data.error || 'Error al verificar el pago');
+          throw new Error(data.error || data.message || 'Error al verificar el pago');
         }
 
         const { session_details } = data;
@@ -71,6 +91,7 @@ export default function PaymentSuccessPage() {
         };
 
         setTicketData(ticket);
+        clearTimeout(timeoutId);
         
         // Notificar a la ventana principal (si existe) que el pago fue exitoso
         try {
@@ -88,25 +109,51 @@ export default function PaymentSuccessPage() {
         
       } catch (err) {
         console.error('❌ Error procesando pago:', err);
-        setError(err instanceof Error ? err.message : 'Error desconocido');
+        clearTimeout(timeoutId);
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setError('La solicitud tomó demasiado tiempo. Por favor, intenta de nuevo.');
+        } else {
+          setError(err instanceof Error ? err.message : 'Error desconocido al procesar el pago');
+        }
       } finally {
         setLoading(false);
       }
     };
 
     processPaymentSuccess();
-  }, [searchParams]);
+
+    // Cleanup function
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [searchParams]); // Agregar loading como dependencia para el timeout
 
   const handlePrint = () => {
     window.print();
   };
 
   const handleClose = () => {
-    // Intentar cerrar la ventana
-    if (window.opener) {
-      window.close();
-    } else {
-      // Si no se puede cerrar, redirigir al inicio
+    try {
+      // Notificar a la ventana principal que debe recargar
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          type: 'STRIPE_PAYMENT_COMPLETE_CLOSE',
+          action: 'reload_and_home'
+        }, window.location.origin);
+        console.log('📤 Mensaje de cierre enviado a ventana principal');
+        
+        // Intentar cerrar esta ventana
+        setTimeout(() => {
+          window.close();
+        }, 500);
+      } else {
+        // Si no hay ventana principal, redirigir directamente
+        console.log('🏠 No hay ventana principal, redirigiendo...');
+        window.location.href = '/';
+      }
+    } catch (err) {
+      console.error('❌ Error al cerrar:', err);
+      // Como fallback, redirigir
       window.location.href = '/';
     }
   };

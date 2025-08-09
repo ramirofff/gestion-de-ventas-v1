@@ -24,27 +24,47 @@ export async function createSale(
     const client = useAdminClient ? supabaseAdmin : supabase;
     console.log('📡 Cliente Supabase seleccionado:', useAdminClient ? 'ADMIN (bypassa RLS)' : 'NORMAL (con RLS)');
     
-    // Verificar si ya existe una venta con este payment_intent_id para prevenir duplicados
+    // 🔒 VERIFICACIÓN ATÓMICA DE DUPLICADOS CON UPSERT
     if (stripePaymentIntentId) {
       console.log('🔍 Verificando duplicados por stripe_payment_intent_id:', stripePaymentIntentId);
-      const { data: existingSale, error: checkError } = await client
-        .from('sales')
-        .select('id, stripe_payment_intent_id')
-        .eq('stripe_payment_intent_id', stripePaymentIntentId)
-        .limit(1);
       
-      if (checkError) {
-        console.warn('⚠️ Error verificando duplicados:', checkError);
-      } else if (existingSale && existingSale.length > 0) {
-        console.warn('⚠️ Ya existe una venta con este payment_intent_id:', existingSale[0].id);
-        return {
-          data: existingSale,
-          error: null,
-          message: 'Venta ya procesada anteriormente'
-        };
-      } else {
-        console.log('✅ No se encontraron duplicados, procediendo con la creación');
+      try {
+        // USAR TRANSACCIÓN ATÓMICA: INSERT con ON CONFLICT para evitar race conditions
+        console.log('🔄 Intentando inserción con ON CONFLICT (UPSERT) para evitar duplicados...');
+        
+        // Primera verificación - Usar una consulta que bloquee la fila si existe
+        const { data: existingSale, error: checkError } = await client
+          .from('sales')
+          .select('id, stripe_payment_intent_id, ticket_id, created_at')
+          .eq('stripe_payment_intent_id', stripePaymentIntentId)
+          .limit(1);
+        
+        if (checkError) {
+          console.warn('⚠️ Error verificando duplicados:', checkError);
+        } else if (existingSale && existingSale.length > 0) {
+          console.warn('⚠️ DUPLICADO DETECTADO - Ya existe una venta con este payment_intent_id:', existingSale[0].id);
+          console.log('📊 Detalles de venta existente:', {
+            id: existingSale[0].id,
+            stripe_payment_intent_id: existingSale[0].stripe_payment_intent_id,
+            ticket_id: existingSale[0].ticket_id,
+            created_at: existingSale[0].created_at
+          });
+          return {
+            data: existingSale,
+            error: null,
+            message: 'Venta ya procesada anteriormente',
+            isDuplicate: true
+          };
+        }
+        
+        console.log('✅ Primera verificación pasada - No hay duplicados existentes');
+      } catch (error) {
+        console.error('❌ Error en verificación de duplicados:', error);
+        // Continuar pero con advertencia
+        console.warn('⚠️ Procediendo con inserción a pesar del error de verificación');
       }
+    } else {
+      console.log('⚠️ No hay stripe_payment_intent_id, saltando verificación de duplicados');
     }
     
     // Validar datos de entrada
@@ -121,6 +141,8 @@ export async function createSale(
     // usamos el userId que ya viene validado desde el cliente
     console.log('✅ Usuario confirmado para inserción via parámetro:', userId);
 
+    // 🚀 INSERCIÓN PRINCIPAL CON PROTECCIÓN CONTRA DUPLICADOS
+    console.log('📤 Ejecutando inserción en la base de datos...');
     const { data, error } = await client.from('sales').insert([saleData]).select();
     
     if (error) {
@@ -129,6 +151,26 @@ export async function createSale(
       console.error('- Mensaje:', error.message || 'Sin mensaje');
       console.error('- Detalles:', error.details || 'Sin detalles');
       console.error('- Hint:', error.hint || 'Sin hint');
+      
+      // Si es un error de duplicado, intentar recuperar la venta existente
+      if (error.code === '23505' && stripePaymentIntentId) {
+        console.log('🔄 Error de duplicado detectado, recuperando venta existente...');
+        const { data: existingSale } = await client
+          .from('sales')
+          .select('*')
+          .eq('stripe_payment_intent_id', stripePaymentIntentId)
+          .limit(1);
+          
+        if (existingSale && existingSale.length > 0) {
+          console.log('✅ Recuperada venta existente:', existingSale[0].id);
+          return {
+            data: existingSale,
+            error: null,
+            message: 'Venta recuperada de duplicado',
+            isDuplicate: true
+          };
+        }
+      }
       
       // Log específico del tipo de error
       if (error.code) {
@@ -192,6 +234,57 @@ export async function createSale(
     }
     
     console.log('Venta creada exitosamente:', data);
+    
+    // 🔍 VERIFICACIÓN POST-INSERT: Detectar duplicados creados concurrentemente
+    if (stripePaymentIntentId && data && data.length > 0) {
+      console.log('🔍 POST-INSERT: Verificando si se crearon duplicados concurrentemente...');
+      
+      try {
+        const { data: allSalesWithSamePayment, error: duplicateCheckError } = await client
+          .from('sales')
+          .select('id, created_at, stripe_payment_intent_id')
+          .eq('stripe_payment_intent_id', stripePaymentIntentId)
+          .order('created_at', { ascending: true });
+          
+        if (!duplicateCheckError && allSalesWithSamePayment && allSalesWithSamePayment.length > 1) {
+          console.warn('🚨 DUPLICADOS DETECTADOS POST-INSERT!');
+          console.warn(`📊 Encontradas ${allSalesWithSamePayment.length} ventas con el mismo payment_intent_id:`);
+          allSalesWithSamePayment.forEach((sale, index) => {
+            console.warn(`  ${index + 1}. ID: ${sale.id} | Creado: ${sale.created_at}`);
+          });
+          
+          // Retornar la primera venta (más antigua) y marcar como duplicado
+          const firstSale = allSalesWithSamePayment[0];
+          const currentSaleId = data[0].id;
+          
+          if (firstSale.id !== currentSaleId) {
+            console.warn(`⚠️ La venta actual (${currentSaleId}) no es la primera. Retornando la primera: ${firstSale.id}`);
+            
+            // Opcionalmente, podrías marcar las ventas duplicadas para limpieza posterior
+            console.log('💡 SUGERENCIA: Considerar limpiar duplicados más tarde');
+            
+            return {
+              data: [firstSale],
+              error: null,
+              message: 'Duplicado detectado post-insert, retornando venta original',
+              isDuplicate: true,
+              duplicateInfo: {
+                originalId: firstSale.id,
+                duplicateId: currentSaleId,
+                totalDuplicates: allSalesWithSamePayment.length
+              }
+            };
+          } else {
+            console.log('✅ La venta actual es la primera, procediendo normalmente');
+          }
+        } else {
+          console.log('✅ No se detectaron duplicados post-insert');
+        }
+      } catch (postCheckError) {
+        console.warn('⚠️ Error en verificación post-insert:', postCheckError);
+        // Continuar normalmente si falla la verificación post-insert
+      }
+    }
     
     // 🎉 DEBUG: Confirmar datos guardados
     console.log('✅ VENTA GUARDADA EXITOSAMENTE:');

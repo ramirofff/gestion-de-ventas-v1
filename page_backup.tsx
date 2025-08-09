@@ -937,7 +937,7 @@ const favoritos = products.filter((p: Product) => favoriteIds.includes(p.id));
           </ul>
           <div className="mt-8">
             <h3 className="text-md font-bold text-blue-400 mb-2">¿Necesitas más ayuda?</h3>
-            <p className="text-blue-300 mb-2">Contáctanos por email: <a href="mailto:soporte@fastfood-pos.com" className="underline text-blue-500">soporte@fastfood-pos.com</a></p>
+            <p className="text-blue-300 mb-2">Contáctanos por email: <a href="mailto:supporton@gmail.com" className="underline text-blue-500">supporton@gmail.com</a></p>
             <p className="text-blue-300">O por WhatsApp: <a href="https://wa.me/5491123456789" target="_blank" rel="noopener noreferrer" className="underline text-blue-500">+54 9 11 2345-6789</a></p>
           </div>
         </div>

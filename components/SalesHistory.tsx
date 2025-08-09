@@ -84,64 +84,72 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
         }
       }
       
-      // PASO 2: FALLBACK A LOCALSTORAGE SI SUPABASE FALLA O NO HAY VENTAS
-      if (allSales.length === 0) {
-        console.log('💾 Cargando ventas desde localStorage (fallback)...');
-        const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
-        console.log('💾 Ventas encontradas en localStorage:', localSales.length);
+      // PASO 2: CARGAR TAMBIÉN DESDE LOCALSTORAGE Y COMBINAR (EVITANDO DUPLICADOS)
+      console.log('💾 Cargando también desde localStorage para combinar...');
+      const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
+      console.log('💾 Ventas encontradas en localStorage:', localSales.length);
+      
+      // COMBINAR VENTAS Y ELIMINAR DUPLICADOS DE AMBAS FUENTES
+      const combinedSales: Sale[] = [...allSales]; // Comenzar con las ventas de Supabase
+      const seenIds = new Set<string>();
+      const seenPaymentIntents = new Set<string>();
+      const seenTicketIds = new Set<string>();
+      
+      // Primero, marcar todos los IDs que ya tenemos de Supabase
+      allSales.forEach(sale => {
+        if (sale.id) seenIds.add(sale.id.toString());
+        if (sale.stripe_payment_intent_id) seenPaymentIntents.add(sale.stripe_payment_intent_id);
+        if (sale.ticket_id) seenTicketIds.add(sale.ticket_id);
+      });
+      
+      // Luego, agregar las ventas de localStorage que NO estén duplicadas
+      localSales.forEach((localSale: any) => {
+        const saleId = localSale.id?.toString();
+        const paymentIntentId = localSale.stripe_payment_intent_id;
+        const ticketId = localSale.ticket_id;
         
-        // LIMPIAR DUPLICADOS AUTOMÁTICAMENTE
-        const uniqueSales: any[] = [];
-        const seenIds = new Set<string>();
-        const seenSessionIds = new Set<string>();
+        // Verificar si es duplicado
+        const isDuplicate = 
+          (saleId && seenIds.has(saleId)) ||
+          (paymentIntentId && seenPaymentIntents.has(paymentIntentId)) ||
+          (ticketId && seenTicketIds.has(ticketId));
         
-        localSales.forEach((sale: any) => {
-          const saleId = sale.id?.toString();
-          const sessionId = sale.session_id;
-          const paymentIntentId = sale.stripe_payment_intent_id;
+        if (!isDuplicate) {
+          // Agregar la venta local que no es duplicada
+          const formattedSale: Sale = {
+            id: localSale.id || localSale.ticket_id || `local-${Date.now()}-${Math.random()}`,
+            ticket_id: localSale.ticket_id || localSale.id,
+            created_at: localSale.created_at || localSale.date || new Date().toISOString(),
+            products: localSale.products || localSale.items || [],
+            items: localSale.items || localSale.products || [],
+            total: Number(localSale.total) || 0,
+            subtotal: Number(localSale.subtotal) || Number(localSale.total) || 0,
+            payment_method: localSale.payment_method || 'stripe',
+            payment_status: localSale.payment_status || 'completed',
+            status: localSale.status || 'completed',
+            user_id: localSale.user_id || userId || 'local-user',
+            stripe_payment_intent_id: localSale.stripe_payment_intent_id,
+            metadata: localSale.metadata
+          };
           
-          // Verificar duplicados por múltiples criterios
-          const isDuplicate = 
-            (saleId && seenIds.has(saleId)) ||
-            (sessionId && seenSessionIds.has(sessionId)) ||
-            uniqueSales.some((existingSale: any) => 
-              existingSale.stripe_payment_intent_id && 
-              paymentIntentId && 
-              existingSale.stripe_payment_intent_id === paymentIntentId
-            );
+          combinedSales.push(formattedSale);
           
-          if (!isDuplicate) {
-            uniqueSales.push(sale);
-            if (saleId) seenIds.add(saleId);
-            if (sessionId) seenSessionIds.add(sessionId);
-          } else {
-            console.log('🗑️ Eliminando duplicado:', saleId, sessionId);
-          }
-        });
-        
-        // Guardar la lista limpia de vuelta en localStorage
-        if (uniqueSales.length !== localSales.length) {
-          localStorage.setItem('sales', JSON.stringify(uniqueSales));
-          console.log('🧹 Duplicados eliminados. Antes:', localSales.length, 'Después:', uniqueSales.length);
+          // Marcar IDs como vistos
+          if (saleId) seenIds.add(saleId);
+          if (paymentIntentId) seenPaymentIntents.add(paymentIntentId);
+          if (ticketId) seenTicketIds.add(ticketId);
+          
+          console.log('➕ Agregando venta de localStorage:', saleId || ticketId);
+        } else {
+          console.log('🗑️ Eliminando duplicado de localStorage:', saleId || ticketId);
         }
-        
-        // Convertir las ventas del localStorage al formato esperado
-        allSales = uniqueSales.map((sale: any) => ({
-          id: sale.id || sale.ticket_id,
-          ticket_id: sale.ticket_id || sale.id,
-          created_at: sale.created_at || sale.date || new Date().toISOString(),
-          products: sale.products || sale.items || [],
-          items: sale.items || sale.products || [],
-          total: Number(sale.total) || 0,
-          subtotal: Number(sale.subtotal) || Number(sale.total) || 0,
-          payment_method: sale.payment_method || 'stripe',
-          payment_status: sale.payment_status || 'completed',
-          status: sale.status || 'completed',
-          user_id: sale.user_id || userId || 'local-user',
-          stripe_payment_intent_id: sale.stripe_payment_intent_id, // IMPORTANTE: Mantener el ID de Stripe
-          metadata: sale.metadata
-        }));
-      }
+      });
+      
+      // Ordenar por fecha más reciente
+      combinedSales.sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime());
+      
+      allSales = combinedSales;
+      console.log('✅ Total de ventas combinadas (sin duplicados):', allSales.length);
       
       setSales(allSales);
       console.log('✅ Total de ventas cargadas:', allSales.length);
