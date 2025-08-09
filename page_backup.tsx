@@ -599,8 +599,6 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
   const [selectedCategory, setSelectedCategory] = useState('');
   const { cart, addToCart, removeFromCart, clearCart, updateQuantity } = useCart();
   const [searchTerm, setSearchTerm] = useState('');
-  const [showCart, setShowCart] = useState(false); // Estado para mostrar/ocultar carrito móvil
-  const [isMobile, setIsMobile] = useState(false); // Estado para detectar dispositivo móvil
   const [isInitialLoad, setIsInitialLoad] = useState(true); // Estado para controlar la primera carga
   // Productos favoritos - migrado a Supabase
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
@@ -616,21 +614,6 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
     };
     loadFavorites();
   }, [user, favoritesLoaded]);
-
-  // Detectar tamaño de pantalla de forma segura
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-    
-    // Verificar al montar
-    checkMobile();
-    
-    // Escuchar cambios de tamaño
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
   const [orderNote, setOrderNote] = useState('');
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discount, setDiscount] = useState<number>(0);
