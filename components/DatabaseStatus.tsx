@@ -41,14 +41,7 @@ export function DatabaseStatus() {
     checkDatabase();
   }, []);
 
-  if (status.checking) {
-    return (
-      <div className="database-status checking">
-        <LoadingSpinner />
-        <span>Verificando base de datos...</span>
-      </div>
-    );
-  }
+
 
   if (status.hasErrors) {
     return (

@@ -19,17 +19,45 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
-    // Obtener sesión inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    // Obtener sesión inicial con manejo de errores
+    const getSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('Error al obtener sesión en AuthGuard:', error.message);
+          // Limpiar sesión inválida
+          if (error.message.includes('refresh_token_not_found') || error.message.includes('Invalid Refresh Token')) {
+            console.log('🧹 Limpiando sesión inválida desde AuthGuard...');
+            await supabase.auth.signOut();
+            // Limpiar localStorage
+            localStorage.removeItem('supabase.auth.token');
+          }
+          setUser(null);
+        } else {
+          setUser(session?.user ?? null);
+        }
+      } catch (err) {
+        console.warn('Error de autenticación en AuthGuard:', err);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    getSession();
 
     // Escuchar cambios de auth
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed in AuthGuard:', event);
+      if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+        setUser(null);
+      } else if (event === 'SIGNED_IN' && session) {
+        setUser(session.user);
+      } else {
+        setUser(session?.user ?? null);
+      }
       setLoading(false);
     });
 

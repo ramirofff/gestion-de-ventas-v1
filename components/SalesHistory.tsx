@@ -35,68 +35,12 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
     
     setLoading(true);
     try {
-      // PASO 1: CARGAR DESDE LOCALSTORAGE (SISTEMA PRINCIPAL)
-      console.log('💾 Cargando ventas desde localStorage (sistema principal)...');
-      const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
-      console.log('💾 Ventas encontradas en localStorage:', localSales.length);
+      let allSales: Sale[] = [];
       
-      // LIMPIAR DUPLICADOS AUTOMÁTICAMENTE
-      const uniqueSales: any[] = [];
-      const seenIds = new Set<string>();
-      const seenSessionIds = new Set<string>();
-      
-      localSales.forEach((sale: any) => {
-        const saleId = sale.id?.toString();
-        const sessionId = sale.session_id;
-        const paymentIntentId = sale.stripe_payment_intent_id;
-        
-        // Verificar duplicados por múltiples criterios
-        const isDuplicate = 
-          (saleId && seenIds.has(saleId)) ||
-          (sessionId && seenSessionIds.has(sessionId)) ||
-          uniqueSales.some((existingSale: any) => 
-            existingSale.stripe_payment_intent_id && 
-            paymentIntentId && 
-            existingSale.stripe_payment_intent_id === paymentIntentId
-          );
-        
-        if (!isDuplicate) {
-          uniqueSales.push(sale);
-          if (saleId) seenIds.add(saleId);
-          if (sessionId) seenSessionIds.add(sessionId);
-        } else {
-          console.log('🗑️ Eliminando duplicado:', saleId, sessionId);
-        }
-      });
-      
-      // Guardar la lista limpia de vuelta en localStorage
-      if (uniqueSales.length !== localSales.length) {
-        localStorage.setItem('sales', JSON.stringify(uniqueSales));
-        console.log('🧹 Duplicados eliminados. Antes:', localSales.length, 'Después:', uniqueSales.length);
-      }
-      
-      // Convertir las ventas del localStorage al formato esperado
-      const formattedLocalSales: Sale[] = uniqueSales.map((sale: any) => ({
-        id: sale.id || sale.ticket_id,
-        ticket_id: sale.ticket_id || sale.id,
-        created_at: sale.created_at || sale.date || new Date().toISOString(),
-        products: sale.products || sale.items || [],
-        items: sale.items || sale.products || [],
-        total: Number(sale.total) || 0,
-        subtotal: Number(sale.subtotal) || Number(sale.total) || 0,
-        payment_method: sale.payment_method || 'stripe',
-        payment_status: sale.payment_status || 'completed',
-        status: sale.status || 'completed',
-        user_id: sale.user_id || userId || 'local-user'
-      }));
-      
-      setSales(formattedLocalSales);
-      console.log('✅ Ventas cargadas desde localStorage:', formattedLocalSales.length);
-      
-      // PASO 2: INTENTAR CARGAR TAMBIÉN DE SUPABASE (OPCIONAL)
+      // PASO 1: CARGAR DESDE SUPABASE (FUENTE PRINCIPAL)
       if (userId) {
         try {
-          console.log('🔄 Intentando cargar también desde Supabase (opcional)...');
+          console.log('�️ Cargando ventas desde Supabase (fuente principal)...');
           
           // Cargar nombre del negocio
           const settings = await UserSettingsManager.getUserSettings(userId);
@@ -111,57 +55,118 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
             .order('created_at', { ascending: false });
 
           if (error) {
-            console.warn('⚠️ Error cargando desde Supabase (no crítico):', error);
-          } else if (data && data.length > 0) {
-            console.log('✅ También encontradas ventas en Supabase:', data.length);
+            console.error('❌ Error cargando desde Supabase:', error);
+            throw error;
+          } else if (data) {
+            console.log('✅ Ventas encontradas en Supabase:', data.length);
             
-            // Combinar ventas de localStorage y Supabase, evitando duplicados
-            const combinedSales = [...formattedLocalSales];
-            data.forEach(supabaseSale => {
-              const exists = combinedSales.find(localSale => 
-                localSale.id === supabaseSale.id || 
-                localSale.ticket_id === supabaseSale.ticket_id ||
-                (supabaseSale.created_at && localSale.created_at && 
-                 Math.abs(new Date(localSale.created_at).getTime() - new Date(supabaseSale.created_at).getTime()) < 5000) // 5 segundos de diferencia
-              );
-              if (!exists) {
-                combinedSales.push(supabaseSale);
-              }
-            });
-            
-            // Ordenar por fecha
-            combinedSales.sort((a, b) => {
-              const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-              const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-              return dateB - dateA;
-            });
-            setSales(combinedSales);
-            console.log('✅ Ventas combinadas (localStorage + Supabase):', combinedSales.length);
+            // Mapear las ventas de Supabase al formato correcto
+            allSales = data.map((sale: any) => ({
+              id: sale.id,
+              ticket_id: sale.ticket_id,
+              created_at: sale.created_at,
+              products: sale.products || sale.items || [],
+              items: sale.items || sale.products || [],
+              total: Number(sale.total) || 0,
+              subtotal: Number(sale.subtotal) || Number(sale.total) || 0,
+              payment_method: sale.payment_method || 'stripe',
+              payment_status: sale.payment_status || 'completed',
+              status: sale.status || 'completed',
+              user_id: sale.user_id,
+              stripe_payment_intent_id: sale.stripe_payment_intent_id, // IMPORTANTE: Mantener el ID de Stripe
+              metadata: sale.metadata
+            }));
           }
         } catch (supabaseError) {
-          console.warn('⚠️ Error con Supabase (no crítico):', supabaseError);
+          console.error('❌ Error con Supabase:', supabaseError);
+          // Fallback a localStorage si Supabase falla
+          console.log('🔄 Fallback: Intentando cargar desde localStorage...');
         }
       }
       
-      // PASO 3: CALCULAR TOTALES
-      const allSales = formattedLocalSales; // Usar las ventas que tenemos seguras
+      // PASO 2: FALLBACK A LOCALSTORAGE SI SUPABASE FALLA O NO HAY VENTAS
+      if (allSales.length === 0) {
+        console.log('💾 Cargando ventas desde localStorage (fallback)...');
+        const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
+        console.log('💾 Ventas encontradas en localStorage:', localSales.length);
+        
+        // LIMPIAR DUPLICADOS AUTOMÁTICAMENTE
+        const uniqueSales: any[] = [];
+        const seenIds = new Set<string>();
+        const seenSessionIds = new Set<string>();
+        
+        localSales.forEach((sale: any) => {
+          const saleId = sale.id?.toString();
+          const sessionId = sale.session_id;
+          const paymentIntentId = sale.stripe_payment_intent_id;
+          
+          // Verificar duplicados por múltiples criterios
+          const isDuplicate = 
+            (saleId && seenIds.has(saleId)) ||
+            (sessionId && seenSessionIds.has(sessionId)) ||
+            uniqueSales.some((existingSale: any) => 
+              existingSale.stripe_payment_intent_id && 
+              paymentIntentId && 
+              existingSale.stripe_payment_intent_id === paymentIntentId
+            );
+          
+          if (!isDuplicate) {
+            uniqueSales.push(sale);
+            if (saleId) seenIds.add(saleId);
+            if (sessionId) seenSessionIds.add(sessionId);
+          } else {
+            console.log('🗑️ Eliminando duplicado:', saleId, sessionId);
+          }
+        });
+        
+        // Guardar la lista limpia de vuelta en localStorage
+        if (uniqueSales.length !== localSales.length) {
+          localStorage.setItem('sales', JSON.stringify(uniqueSales));
+          console.log('🧹 Duplicados eliminados. Antes:', localSales.length, 'Después:', uniqueSales.length);
+        }
+        
+        // Convertir las ventas del localStorage al formato esperado
+        allSales = uniqueSales.map((sale: any) => ({
+          id: sale.id || sale.ticket_id,
+          ticket_id: sale.ticket_id || sale.id,
+          created_at: sale.created_at || sale.date || new Date().toISOString(),
+          products: sale.products || sale.items || [],
+          items: sale.items || sale.products || [],
+          total: Number(sale.total) || 0,
+          subtotal: Number(sale.subtotal) || Number(sale.total) || 0,
+          payment_method: sale.payment_method || 'stripe',
+          payment_status: sale.payment_status || 'completed',
+          status: sale.status || 'completed',
+          user_id: sale.user_id || userId || 'local-user',
+          stripe_payment_intent_id: sale.stripe_payment_intent_id, // IMPORTANTE: Mantener el ID de Stripe
+          metadata: sale.metadata
+        }));
+      }
+      
+      setSales(allSales);
+      console.log('✅ Total de ventas cargadas:', allSales.length);
+      
+      // PASO 3: CALCULAR TOTALES CON MEJOR LÓGICA
+      console.log('📊 Calculando totales con', allSales.length, 'ventas');
+      
+      // PASO 3: CALCULAR TOTALES CON MEJOR LÓGICA
       console.log('📊 Calculando totales con', allSales.length, 'ventas');
       
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+      const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
       
       const todaySales = allSales.filter(sale => {
-        const saleDate = new Date(sale.created_at || new Date());
-        saleDate.setHours(0, 0, 0, 0);
-        return saleDate.getTime() === today.getTime();
+        if (!sale.created_at) return false;
+        const saleDate = new Date(sale.created_at);
+        return saleDate >= todayStart && saleDate <= todayEnd;
       });
       
-      const thisMonth = new Date();
-      thisMonth.setDate(1);
-      thisMonth.setHours(0, 0, 0, 0);
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
       
       const monthSales = allSales.filter(sale => {
-        const saleDate = new Date(sale.created_at || new Date());
+        if (!sale.created_at) return false;
+        const saleDate = new Date(sale.created_at);
         return saleDate >= thisMonth;
       });
       
@@ -171,11 +176,15 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
       setTodayTotal(todayAmount);
       setMonthTotal(monthAmount);
       
-      console.log('📊 Totales calculados - Hoy:', todayAmount, 'Mes:', monthAmount);
+      console.log('📊 Totales calculados:');
+      console.log('  - Ventas de hoy:', todaySales.length, '= $', todayAmount);
+      console.log('  - Ventas del mes:', monthSales.length, '= $', monthAmount);
       
     } catch (error) {
       console.error('❌ Error en fetchSales:', error);
       setSales([]);
+      setTodayTotal(0);
+      setMonthTotal(0);
     } finally {
       setLoading(false);
     }
@@ -213,60 +222,201 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
   }
 
   return (
-    <div className={getThemeClass({dark:'bg-zinc-900',light:'bg-yellow-50'}) + " max-w-3xl mx-auto mt-10 rounded-2xl p-8 border " + getThemeClass({dark:'border-zinc-800',light:'border-yellow-200'}) + " shadow-2xl transition-colors"}>
-      <h2 className="text-xl font-bold text-blue-400 mb-4 flex items-center gap-2">
-        <ListOrdered className="w-6 h-6" /> Historial de ventas
-      </h2>
-      <div className="flex gap-8 mb-6 items-center">
-        <div className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " text-lg font-bold"}>Total del día: <span className="text-yellow-400">${todayTotal.toFixed(2)}</span></div>
-        <div className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " text-lg font-bold"}>Total del mes: <span className="text-yellow-400">${monthTotal.toFixed(2)}</span></div>
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={e => setSelectedDate(e.target.value)}
-          className={"ml-auto rounded px-3 py-1 border transition-colors " + getThemeClass({dark:'bg-zinc-800 text-white border-zinc-700',light:'bg-yellow-50 text-yellow-900 border-yellow-200'})}
-        />
+    <div className={getThemeClass({dark:'bg-zinc-900',light:'bg-yellow-50'}) + " max-w-6xl mx-auto mt-10 rounded-2xl p-8 border " + getThemeClass({dark:'border-zinc-800',light:'border-yellow-200'}) + " shadow-2xl transition-colors"}>
+      {/* Header mejorado */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h2 className="text-2xl font-bold text-blue-400 flex items-center gap-3">
+            <ListOrdered className="w-8 h-8" /> 
+            Historial de Ventas
+          </h2>
+          <p className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'}) + " text-sm mt-1"}>
+            Gestión completa de transacciones y reportes
+          </p>
+        </div>
+        
+        {/* Selector de fecha más prominente */}
+        <div className="flex items-center gap-3">
+          <label className={getThemeClass({dark:'text-zinc-300',light:'text-yellow-800'}) + " text-sm font-medium"}>
+            Fecha:
+          </label>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            className={"rounded-lg px-4 py-2 border-2 transition-all focus:ring-2 focus:ring-blue-500 " + getThemeClass({dark:'bg-zinc-800 text-white border-zinc-700 focus:border-blue-500',light:'bg-white text-yellow-900 border-yellow-300 focus:border-blue-500'})}
+          />
+        </div>
       </div>
-      <div className="overflow-x-auto">
+
+      {/* Métricas mejoradas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className={getThemeClass({dark:'bg-zinc-800 border-zinc-700',light:'bg-yellow-100 border-yellow-300'}) + " rounded-xl p-6 border-2 text-center transition-all hover:scale-105"}>
+          <div className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'}) + " text-sm font-medium uppercase tracking-wide mb-2"}>
+            Ventas de Hoy
+          </div>
+          <div className="text-3xl font-bold text-green-500 mb-1">
+            ${todayTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-xs"}>
+            {filteredSales.length} transacciones
+          </div>
+        </div>
+        
+        <div className={getThemeClass({dark:'bg-zinc-800 border-zinc-700',light:'bg-yellow-100 border-yellow-300'}) + " rounded-xl p-6 border-2 text-center transition-all hover:scale-105"}>
+          <div className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'}) + " text-sm font-medium uppercase tracking-wide mb-2"}>
+            Ventas del Mes
+          </div>
+          <div className="text-3xl font-bold text-blue-500 mb-1">
+            ${monthTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-xs"}>
+            Total acumulado
+          </div>
+        </div>
+        
+        <div className={getThemeClass({dark:'bg-zinc-800 border-zinc-700',light:'bg-yellow-100 border-yellow-300'}) + " rounded-xl p-6 border-2 text-center transition-all hover:scale-105"}>
+          <div className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'}) + " text-sm font-medium uppercase tracking-wide mb-2"}>
+            Promedio por Venta
+          </div>
+          <div className="text-3xl font-bold text-purple-500 mb-1">
+            ${filteredSales.length > 0 ? (todayTotal / filteredSales.length).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+          </div>
+          <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-xs"}>
+            Ticket promedio
+          </div>
+        </div>
+      </div>
+
+      {/* Tabla mejorada */}
+      <div className="overflow-x-auto rounded-xl shadow-lg">
         {loading ? (
-          <div className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'})}>Cargando historial...</div>
+          <div className={getThemeClass({dark:'bg-zinc-800',light:'bg-yellow-100'}) + " rounded-xl p-12 text-center"}>
+            <div className="animate-spin inline-block w-8 h-8 border-[3px] border-current border-t-transparent text-blue-500 rounded-full mb-4"></div>
+            <div className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'}) + " font-medium"}>
+              Cargando historial de ventas...
+            </div>
+          </div>
         ) : filteredSales.length === 0 ? (
-          <div className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'})}>No hay ventas para este día.</div>
+          <div className={getThemeClass({dark:'bg-zinc-800',light:'bg-yellow-100'}) + " rounded-xl p-12 text-center"}>
+            <div className="text-6xl mb-4">📊</div>
+            <div className={getThemeClass({dark:'text-zinc-400',light:'text-yellow-700'}) + " text-lg font-medium mb-2"}>
+              No hay ventas para esta fecha
+            </div>
+            <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-sm"}>
+              Selecciona otra fecha o realiza una nueva venta
+            </div>
+          </div>
         ) : (
-          <table className={"min-w-full rounded-xl overflow-hidden transition-colors " + getThemeClass({dark:'bg-zinc-800',light:'bg-yellow-100'})}>
+          <table className={"min-w-full rounded-xl overflow-hidden transition-colors " + getThemeClass({dark:'bg-zinc-800',light:'bg-white'})}>
             <thead className={getThemeClass({dark:'bg-zinc-700',light:'bg-yellow-200'})}>
               <tr>
-                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-4 py-2 text-left"}>Ticket ID</th>
-                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-4 py-2 text-left"}>Hora</th>
-                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-4 py-2 text-left"}>Productos</th>
-                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-4 py-2 text-left"}>Total</th>
-                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-4 py-2 text-left"}>Método</th>
-                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-4 py-2 text-left"}>Acciones</th>
+                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-6 py-4 text-left text-sm font-bold uppercase tracking-wider"}>Ticket</th>
+                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-6 py-4 text-left text-sm font-bold uppercase tracking-wider"}>Hora</th>
+                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-6 py-4 text-left text-sm font-bold uppercase tracking-wider"}>Productos</th>
+                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-6 py-4 text-left text-sm font-bold uppercase tracking-wider"}>Total</th>
+                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-6 py-4 text-left text-sm font-bold uppercase tracking-wider"}>Método</th>
+                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-6 py-4 text-left text-sm font-bold uppercase tracking-wider"}>Estado</th>
+                <th className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " px-6 py-4 text-center text-sm font-bold uppercase tracking-wider"}>Acciones</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-200">
               {filteredSales.map((sale, index) => (
-                <tr key={sale.id || index} className={getThemeClass({dark:'hover:bg-zinc-700',light:'hover:bg-yellow-50'}) + " transition-colors"}>
-                  <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-4 py-3 font-mono"}>{sale.ticket_id}</td>
-                  <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-4 py-3"}>
-                    {sale.created_at ? new Date(sale.created_at).toLocaleTimeString() : 'N/A'}
+                <tr key={sale.id || index} className={getThemeClass({dark:'hover:bg-zinc-750 border-zinc-700',light:'hover:bg-yellow-50 border-yellow-200'}) + " transition-colors border-b"}>
+                  <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-6 py-4"}>
+                    <div className="font-mono font-bold text-sm">{sale.ticket_id}</div>
+                    <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-xs"}>
+                      ID: {sale.id?.toString().slice(0, 8)}...
+                    </div>
                   </td>
-                  <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-4 py-3"}>
-                    {(sale.products || sale.items || []).length} items
+                  <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-6 py-4"}>
+                    <div className="font-medium">
+                      {sale.created_at ? new Date(sale.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                    </div>
+                    <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-xs"}>
+                      {sale.created_at ? new Date(sale.created_at).toLocaleDateString('es-AR') : ''}
+                    </div>
                   </td>
-                  <td className={getThemeClass({dark:'text-green-400',light:'text-green-600'}) + " px-4 py-3 font-bold"}>
-                    ${(sale.total || 0).toFixed(2)}
+                  <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-6 py-4"}>
+                    <div className="font-semibold">
+                      {(sale.products || sale.items || []).length} items
+                    </div>
+                    <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-xs"}>
+                      {(sale.products || sale.items || []).slice(0, 2).map((item: any, i: number) => item.name || 'Producto').join(', ')}
+                      {(sale.products || sale.items || []).length > 2 && '...'}
+                    </div>
                   </td>
-                  <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-4 py-3 capitalize"}>
-                    {sale.payment_method || 'N/A'}
+                  <td className="px-6 py-4">
+                    <div className="text-xl font-bold text-green-500">
+                      ${(sale.total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => setShowTicket(sale)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-sm transition-colors"
-                    >
-                      Ver ticket
-                    </button>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+                      sale.payment_method === 'stripe' 
+                        ? 'bg-purple-100 text-purple-800' 
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {sale.payment_method === 'stripe' ? '💳 Stripe' : sale.payment_method || 'N/A'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+                      sale.payment_status === 'completed' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {sale.payment_status === 'completed' ? '✅ Completado' : sale.payment_status || 'Pendiente'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <div className="flex gap-2 justify-center">
+                      {/* Mostrar botón de Stripe si tiene payment_intent_id */}
+                      {sale.stripe_payment_intent_id ? (
+                        <button
+                          onClick={async () => {
+                            const paymentIntentId = sale.stripe_payment_intent_id;
+                            console.log('🔍 Buscando recibo para sale:', sale.id, 'paymentIntentId:', paymentIntentId);
+                            
+                            try {
+                              console.log('🧾 Obteniendo recibo oficial de Stripe...');
+                              const response = await fetch('/api/stripe/receipt', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                  payment_intent_id: paymentIntentId
+                                })
+                              });
+                              
+                              const data = await response.json();
+                              console.log('🧾 Respuesta de API:', data);
+                              
+                              if (data.receipt_url) {
+                                window.open(data.receipt_url, '_blank');
+                              } else {
+                                alert(`⚠️ Recibo no disponible\n\nInformación del pago:\nID Stripe: ${paymentIntentId}\nTotal: $${(sale.total || 0).toFixed(2)}\nFecha: ${sale.created_at ? new Date(sale.created_at).toLocaleString() : 'N/A'}\n\nContacta a soporte con este ID si necesitas el recibo.`);
+                              }
+                            } catch (error) {
+                              console.error('❌ Error obteniendo recibo:', error);
+                              alert(`❌ Error obteniendo recibo\n\nID del pago: ${paymentIntentId}\nTotal: $${(sale.total || 0).toFixed(2)}\n\nPor favor intenta de nuevo o contacta a soporte.`);
+                            }
+                          }}
+                          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all transform hover:scale-105 flex items-center gap-2 shadow-lg"
+                          title="Ver recibo oficial de Stripe"
+                        >
+                          🧾 Ver Recibo
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setShowTicket(sale)}
+                          className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all transform hover:scale-105 shadow-lg"
+                        >
+                          📄 Ver Ticket
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -275,89 +425,167 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
         )}
       </div>
 
-      {/* Modal para mostrar ticket mejorado */}
+      {/* Modal mejorado para el ticket */}
       {showTicket && (
-        <div className={`${getThemeClass({dark:'bg-black bg-opacity-70',light:'bg-black bg-opacity-50'})} fixed inset-0 z-50 flex items-center justify-center p-4`}>
-          <div className={`${getThemeClass({dark:'bg-zinc-900 text-white',light:'bg-white text-black'})} rounded-2xl shadow-2xl max-w-sm w-full mx-4 relative`}>
-            {/* Botón cerrar */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-75 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 relative transform transition-all max-h-screen overflow-y-auto">
+            {/* Botón cerrar mejorado */}
             <button
               onClick={() => setShowTicket(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl font-bold z-10"
+              className="absolute top-4 right-4 bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 rounded-full w-8 h-8 flex items-center justify-center text-xl font-bold z-10 transition-colors"
             >
               ×
             </button>
             
-            {/* Ticket profesional */}
+            {/* Ticket profesional con diseño mejorado */}
             <div className="p-8">
-              {/* Header del negocio */}
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 mb-1">Mi Negocio</h2>
-                <div className="text-gray-500 text-sm">Sistema de Gestión de Ventas</div>
-                <div className="text-gray-400 text-xs">Av. Principal 123, Ciudad</div>
-                <div className="text-gray-400 text-xs">Tel. (555) 123-4567</div>
-              </div>
-              
-              {/* Línea separadora */}
-              <div className="border-t-2 border-dashed border-gray-300 my-4"></div>
-              
-              {/* Info del ticket */}
-              <div className="text-center mb-6">
-                <h3 className="text-xl font-bold text-gray-800 mb-2">TICKET DE VENTA</h3>
-                <div className="text-lg font-mono text-gray-700">#{showTicket.ticket_id}</div>
-                <div className="text-sm text-gray-500 mt-1">
-                  {showTicket.created_at ? new Date(showTicket.created_at).toLocaleString() : 'N/A'}
+              {/* Header del negocio con mejor diseño */}
+              <div className="text-center mb-8 border-b pb-6">
+                <div className="mb-4">
+                  <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                    <span className="text-2xl text-white font-bold">🏪</span>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400 mt-1">Cajero: ramirozaratee@gmail.com</div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">{businessName}</h2>
+                <div className="text-sm text-gray-500 space-y-1">
+                  <div>Sistema de Gestión de Ventas</div>
+                  <div>📍 Av. Principal 123, Ciudad</div>
+                  <div>📞 (555) 123-4567</div>
+                  <div>🌐 www.minegocio.com</div>
+                </div>
               </div>
               
-              {/* Productos */}
-              <div className="mb-6">
-                <h4 className="font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">PRODUCTOS</h4>
-                <div className="space-y-2">
+              {/* Info del ticket con mejor formato */}
+              <div className="text-center mb-8 bg-gray-50 rounded-xl p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-3 flex items-center justify-center gap-2">
+                  🧾 COMPROBANTE DE VENTA
+                </h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Ticket N°:</span>
+                    <div className="font-mono font-bold text-lg text-blue-600">
+                      {showTicket.ticket_id}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Fecha y Hora:</span>
+                    <div className="font-semibold">
+                      {showTicket.created_at ? new Date(showTicket.created_at).toLocaleDateString('es-AR') : 'N/A'}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {showTicket.created_at ? new Date(showTicket.created_at).toLocaleTimeString('es-AR') : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="text-xs text-gray-500">Atendido por:</div>
+                  <div className="font-medium text-gray-700">Sistema POS v1.0</div>
+                </div>
+              </div>
+              
+              {/* Productos con mejor diseño */}
+              <div className="mb-8">
+                <h4 className="font-bold text-gray-900 mb-4 pb-2 border-b-2 border-blue-200 flex items-center gap-2">
+                  🛍️ DETALLE DE PRODUCTOS
+                </h4>
+                <div className="space-y-3">
                   {(showTicket.products || showTicket.items || []).map((item: any, index: number) => (
-                    <div key={index} className="flex justify-between items-start">
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center">
                       <div className="flex-1">
-                        <div className="font-medium text-gray-800">{item.name || 'Producto'}</div>
-                        <div className="text-xs text-gray-500">
-                          ${(item.price || 0).toFixed(2)} x {item.quantity || 1}
+                        <div className="font-semibold text-gray-900">{item.name || 'Producto'}</div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          ${(item.price || 0).toFixed(2)} × {item.quantity || 1} unidad{(item.quantity || 1) > 1 ? 'es' : ''}
                         </div>
                       </div>
-                      <div className="font-bold text-gray-800 ml-4">
-                        ${((item.price || 0) * (item.quantity || 1)).toFixed(2)}
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-gray-900">
+                          ${((item.price || 0) * (item.quantity || 1)).toFixed(2)}
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
               
-              {/* Línea separadora */}
-              <div className="border-t-2 border-dashed border-gray-300 my-4"></div>
-              
-              {/* Total */}
-              <div className="mb-6">
-                <div className="flex justify-between items-center text-2xl font-bold">
-                  <span className="text-gray-800">TOTAL A PAGAR:</span>
-                  <span className="text-green-600">${(showTicket.total || 0).toFixed(2)}</span>
+              {/* Total con mejor formato */}
+              <div className="mb-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6">
+                <div className="flex justify-between items-center text-lg mb-2">
+                  <span className="text-gray-700">Subtotal:</span>
+                  <span className="font-semibold">${(showTicket.subtotal || showTicket.total || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-lg mb-2">
+                  <span className="text-gray-700">Descuentos:</span>
+                  <span className="font-semibold">$0.00</span>
+                </div>
+                <div className="border-t-2 border-gray-200 pt-3 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-2xl font-bold text-gray-900">TOTAL A PAGAR:</span>
+                    <span className="text-3xl font-bold text-green-600">
+                      ${(showTicket.total || 0).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
               </div>
               
-              {/* Footer */}
-              <div className="text-center text-xs text-gray-400 space-y-1">
-                <div>¡Gracias por su compra!</div>
-                <div>Conserve este ticket como comprobante</div>
-                <div className="mt-3 pt-2 border-t border-gray-200">
-                  Powered by Mi Negocio - POS v1.0
+              {/* Método de pago */}
+              <div className="mb-8 text-center bg-blue-50 rounded-xl p-4">
+                <div className="text-sm text-gray-600 mb-1">Método de pago:</div>
+                <div className="text-lg font-bold text-blue-600 uppercase">
+                  {showTicket.payment_method === 'stripe' ? '💳 Pago con Tarjeta (Stripe)' : showTicket.payment_method || 'Efectivo'}
+                </div>
+                <div className="text-sm text-green-600 mt-2 font-semibold">
+                  ✅ PAGO COMPLETADO
+                </div>
+              </div>
+              
+              {/* Footer mejorado */}
+              <div className="text-center text-xs text-gray-500 space-y-2 border-t pt-6">
+                <div className="text-lg mb-3">¡Gracias por su compra! 😊</div>
+                <div>Conserve este comprobante como garantía</div>
+                <div>Para consultas: info@minegocio.com</div>
+                <div className="mt-4 pt-3 border-t border-gray-200">
+                  <div className="font-medium text-gray-600">Powered by {businessName} - Sistema POS v1.0</div>
+                  <div className="text-gray-400 mt-1">© {new Date().getFullYear()} Todos los derechos reservados</div>
                 </div>
               </div>
             </div>
             
-            {/* Botón imprimir */}
-            <div className="px-8 pb-6">
+            {/* Botones de acción mejorados */}
+            <div className="px-8 pb-8 flex gap-3">
               <button
                 onClick={() => window.print()}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-colors"
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2 shadow-lg"
               >
-                Imprimir ticket
+                🖨️ Imprimir Ticket
+              </button>
+              <button
+                onClick={() => {
+                  const ticketData = `
+=== ${businessName.toUpperCase()} ===
+TICKET: ${showTicket.ticket_id}
+FECHA: ${showTicket.created_at ? new Date(showTicket.created_at).toLocaleString('es-AR') : 'N/A'}
+
+PRODUCTOS:
+${(showTicket.products || showTicket.items || []).map((item: any) => 
+  `- ${item.name || 'Producto'}: $${(item.price || 0).toFixed(2)} x${item.quantity || 1} = $${((item.price || 0) * (item.quantity || 1)).toFixed(2)}`
+).join('\n')}
+
+TOTAL: $${(showTicket.total || 0).toFixed(2)}
+MÉTODO: ${showTicket.payment_method || 'N/A'}
+
+¡Gracias por su compra!
+                  `.trim();
+                  
+                  navigator.clipboard.writeText(ticketData).then(() => {
+                    alert('✅ Información del ticket copiada al portapapeles');
+                  }).catch(() => {
+                    alert('❌ No se pudo copiar al portapapeles');
+                  });
+                }}
+                className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2 shadow-lg"
+                title="Copiar información del ticket"
+              >
+                📋
               </button>
             </div>
           </div>

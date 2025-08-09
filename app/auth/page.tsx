@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -14,6 +14,24 @@ export default function AuthPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [view, setView] = useState<"login" | "register">("login");
+
+  // Limpiar sesión inválida al cargar la página
+  useEffect(() => {
+    const clearInvalidSession = async () => {
+      try {
+        const { error } = await supabase.auth.getSession();
+        if (error && (error.message.includes('refresh_token_not_found') || error.message.includes('Invalid Refresh Token'))) {
+          console.log('🧹 Limpiando sesión inválida...');
+          await supabase.auth.signOut();
+          localStorage.removeItem('supabase.auth.token');
+        }
+      } catch (err) {
+        console.warn('Error al verificar sesión:', err);
+      }
+    };
+    
+    clearInvalidSession();
+  }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -30,14 +30,49 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [themeLoaded, setThemeLoaded] = useState(false);
 
-  // Obtener usuario autenticado
+  // Cargar tema desde localStorage inmediatamente en el cliente
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUser(session?.user ?? null);
-    });
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme') as Theme;
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        setTheme(savedTheme);
+      }
+      setThemeLoaded(true);
+    }
+  }, []);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null);
+  // Obtener usuario autenticado con manejo de errores
+  useEffect(() => {
+    const getSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('Error al obtener sesión:', error.message);
+          // Limpiar sesión inválida
+          if (error.message.includes('refresh_token_not_found') || error.message.includes('Invalid Refresh Token')) {
+            await supabase.auth.signOut();
+          }
+          setCurrentUser(null);
+        } else {
+          setCurrentUser(session?.user ?? null);
+        }
+      } catch (err) {
+        console.warn('Error de autenticación:', err);
+        setCurrentUser(null);
+      }
+    };
+
+    getSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event);
+      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' && !session) {
+        setCurrentUser(null);
+      } else if (event === 'SIGNED_IN' && session) {
+        setCurrentUser(session.user);
+      } else {
+        setCurrentUser(session?.user ?? null);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -46,19 +81,19 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   // Cargar tema desde Supabase cuando el usuario esté autenticado
   useEffect(() => {
     const loadTheme = async () => {
-      if (currentUser && !themeLoaded) {
-        const userTheme = await UserSettingsManager.getTheme(currentUser.id);
-        setTheme(userTheme);
-        setThemeLoaded(true);
-      } else if (!currentUser) {
-        // Usuario no autenticado, usar localStorage como fallback
-        if (typeof window !== 'undefined') {
-          const savedTheme = localStorage.getItem('theme') as Theme;
-          if (savedTheme) {
-            setTheme(savedTheme);
+      if (currentUser && themeLoaded) {
+        try {
+          const userTheme = await UserSettingsManager.getTheme(currentUser.id);
+          if (userTheme !== theme) {
+            setTheme(userTheme);
+            // Sincronizar con localStorage
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('theme', userTheme);
+            }
           }
+        } catch (error) {
+          console.warn('No se pudo cargar el tema del usuario:', error);
         }
-        setThemeLoaded(true);
       }
     };
     loadTheme();
@@ -70,16 +105,36 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const updateTheme = async (newTheme: Theme) => {
     setTheme(newTheme);
     
+    // Aplicar clase al HTML inmediatamente
+    if (typeof window !== 'undefined') {
+      if (newTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      localStorage.setItem('theme', newTheme);
+    }
+    
     if (currentUser) {
       // Usuario autenticado: guardar en Supabase
-      await UserSettingsManager.setTheme(currentUser.id, newTheme);
-    } else {
-      // Usuario no autenticado: usar localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('theme', newTheme);
+      try {
+        await UserSettingsManager.setTheme(currentUser.id, newTheme);
+      } catch (error) {
+        console.warn('No se pudo guardar el tema del usuario:', error);
       }
     }
   };
+
+  // Aplicar clase dark al HTML cuando cambie el tema
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  }, [theme]);
 
   const value = {
     theme,

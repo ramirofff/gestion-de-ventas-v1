@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { supabaseAdmin } from '../../../../../lib/supabaseClient';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-07-30.basil',
@@ -55,7 +50,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 3. Guardar en base de datos
-    const { error: dbError } = await supabase
+    const { error: dbError } = await supabaseAdmin
       .from('client_accounts')
       .insert([{
         user_id: user_id,

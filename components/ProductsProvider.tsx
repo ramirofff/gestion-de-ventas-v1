@@ -17,10 +17,10 @@ export function ProductsProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProducts = async () => {
+    console.log('🔄 ProductsProvider: Iniciando carga de productos... (loading:', loading, ')');
     setLoading(true);
+    
     try {
-      console.log('🔄 ProductsProvider: Iniciando carga de productos...');
-      
       // Test de conexión primero
       const { data: testConnection } = await supabase
         .from('products')
@@ -45,12 +45,14 @@ export function ProductsProvider({ children }: { children: React.ReactNode }) {
         setProducts([]);
       } else {
         console.log('✅ Productos cargados exitosamente:', data?.length || 0);
+        console.log('🔄 Actualizando estado: setProducts y setLoading(false)...');
         setProducts(data || []);
       }
     } catch (err) {
       console.error('❌ Error inesperado cargando productos:', err);
       setProducts([]);
     } finally {
+      console.log('🔄 Finalizando carga: setLoading(false)');
       setLoading(false);
     }
   };

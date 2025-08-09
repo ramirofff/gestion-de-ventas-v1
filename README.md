@@ -1,36 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🏪 Gestión de Ventas V1
 
-## Getting Started
+**Professional Point of Sale (POS) System** built with Next.js 15, TypeScript, Tailwind CSS, Supabase, and Stripe integration.
 
-First, run the development server:
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Next.js](https://img.shields.io/badge/Next.js-15.4.2-black.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)
+![Tailwind](https://img.shields.io/badge/Tailwind-3.4-cyan.svg)
 
+## ✨ Features
+
+### 🛒 **Core POS Functionality**
+- ✅ Product management with categories and inventory
+- ✅ Shopping cart with real-time calculations
+- ✅ Professional receipt generation and printing
+- ✅ Sales history and analytics
+- ✅ Multi-user support with authentication
+
+### 💳 **Payment Processing**
+- ✅ Stripe integration for card payments
+- ✅ Cash payment support
+- ✅ Real-time payment verification
+- ✅ Automatic receipt generation
+
+### 🎨 **User Experience**
+- ✅ Responsive design (mobile, tablet, desktop)
+- ✅ Dark/Light theme support
+- ✅ PWA (Progressive Web App) capabilities
+- ✅ Real-time updates
+- ✅ Professional UI/UX
+
+### 📊 **Business Intelligence**
+- ✅ Daily and monthly sales reports
+- ✅ Product performance analytics
+- ✅ Inventory management
+- ✅ Customer data management
+
+## 🚀 Quick Start
+
+### 1. **Clone the Repository**
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/ramirofff/gestion-de-ventas-v1.git
+cd gestion-de-ventas-v1
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. **Install Dependencies**
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. **Database Setup**
+1. Create a new project in [Supabase](https://supabase.com)
+2. Run the SQL script in Supabase SQL Editor:
+   ```bash
+   # Copy content from database-complete-schema.sql and run in Supabase
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. **Environment Configuration**
+Create a `.env.local` file in the root directory:
+```bash
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-## Learn More
+# Stripe Configuration (Test Mode)
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+STRIPE_SECRET_KEY=your_stripe_secret_key
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 5. **Run Development Server**
+```bash
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📦 Deployment
 
-## Deploy on Vercel
+### **Vercel (Recommended)**
+1. Push your code to GitHub
+2. Connect your repository to [Vercel](https://vercel.com)
+3. Add environment variables in Vercel dashboard
+4. Deploy automatically
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🛠️ Technology Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Framework**: Next.js 15 with App Router
+- **Language**: TypeScript  
+- **Styling**: Tailwind CSS
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Payments**: Stripe
+- **UI Components**: Lucide React Icons
+
+## 🔧 Setup Instructions
+
+1. **Database**: Run `database-complete-schema.sql` in your Supabase project
+2. **Environment**: Configure `.env.local` with your API keys
+3. **Development**: `npm run dev` to start local server
+4. **Production**: Deploy to Vercel or your preferred platform
+
+---
+
+⭐ **Star this repository if you find it helpful!**
