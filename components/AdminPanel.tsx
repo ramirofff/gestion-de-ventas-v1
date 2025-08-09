@@ -174,14 +174,6 @@ setEditData({
         <button onClick={() => setShowAddForm((v) => !v)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold">
           {showAddForm ? 'Cerrar formulario' : 'Agregar producto'}
         </button>
-        <a 
-          href="/database-admin" 
-          target="_blank"
-          rel="noopener noreferrer"
-          className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold inline-flex items-center gap-2 transition-colors"
-        >
-          🛠️ Admin BD
-        </a>
       </div>
       {showAddForm && (
         <div className="mb-6">
