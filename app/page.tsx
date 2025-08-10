@@ -54,41 +54,168 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
 
   // Listener para mensajes de la ventana de pago
   useEffect(() => {
+    console.log('🔗 Configurando listener de mensajes para comunicación cross-window...');
+    
     const handleMessage = (event: MessageEvent) => {
+      console.log('📨 Mensaje recibido:', event.data);
+      console.log('📍 Origen del mensaje:', event.origin);
+      console.log('📍 Origen esperado:', window.location.origin);
+      
       // Verificar origen por seguridad
       if (event.origin !== window.location.origin) {
+        console.warn('⚠️ Mensaje bloqueado por origen diferente:', event.origin, 'vs esperado:', window.location.origin);
         return;
       }
 
       if (event.data.type === 'STRIPE_PAYMENT_SUCCESS') {
         console.log('🎉 Mensaje de éxito recibido de ventana de pago:', event.data);
         
+        // Verificar si ya procesamos este pago
+        if (event.data.sessionId && processedPayments.has(event.data.sessionId)) {
+          console.log('⚠️ Pago ya procesado, ignorando:', event.data.sessionId);
+          return;
+        }
+        
         // Procesar el pago exitoso en la pestaña principal
         if (event.data.sessionId) {
-          handleStripePaymentSuccess(event.data.sessionId);
+          // Marcar como procesado
+          setProcessedPayments(prev => new Set(prev).add(event.data.sessionId));
+          
+          if (event.data.source === 'qr_payment' && event.data.showTicket) {
+            // Para pagos QR, mostrar el ticket directamente
+            console.log('🎫 Mostrando ticket para pago QR:', event.data.sessionId);
+            handleStripePaymentSuccessWithTicket(event.data.sessionId);
+          } else {
+            // Para otros pagos, procesar normalmente
+            handleStripePaymentSuccessWithTicket(event.data.sessionId);
+          }
         }
-      } else if (event.data.type === 'STRIPE_PAYMENT_COMPLETE_CLOSE') {
-        // El usuario cerró la ventana de éxito - recargar página
-        console.log('📨 Recibido mensaje de cierre de ventana de éxito');
-        if (event.data.action === 'reload_and_home') {
-          console.log('🔄 Recargando página y regresando al home...');
-          // Limpiar cualquier estado residual
-          setTicket(null);
+      } else if (event.data.type === 'TICKET_CLOSED') {
+        console.log('🔄 Ticket cerrado - Refrescando página:', event.data);
+        // Actualizar el estado para refrescar la interfaz
+        setView('home');
+        setSalesRefreshTrigger(prev => prev + 1);
+        console.log('✅ Página refrescada después de cerrar ticket');
+      } else if (event.data.type === 'PAYMENT_COMPLETED_FROM_QR') {
+        console.log('📱 Pago QR completado desde dispositivo externo:', event.data);
+        
+        // Verificar si ya procesamos este pago
+        if (event.data.sessionId && processedPayments.has(event.data.sessionId)) {
+          console.log('⚠️ Pago QR ya procesado, ignorando:', event.data.sessionId);
+          return;
+        }
+        
+        // Para pagos QR desde dispositivos externos, procesar el pago Y vaciar carrito
+        if (event.data.sessionId) {
+          // Marcar como procesado
+          setProcessedPayments(prev => new Set(prev).add(event.data.sessionId));
+          
+          console.log('🎫 ✅ PROCESANDO PAGO QR - Vaciando carrito y actualizando historial:', event.data.sessionId);
+          
+          // Limpiar carrito inmediatamente para QR
+          clearCart();
           setShowStripePayment(false);
           setView('home');
           
-          // Recargar la página completa para asegurar estado limpio
+          // Mostrar mensaje de éxito
+          setToast({ type: 'success', message: '¡Pago QR procesado exitosamente! El ticket se mostró en el dispositivo del cliente.' });
+          
+          // Refrescar historial de ventas
+          setSalesRefreshTrigger(prev => prev + 1);
+        }
+      } else if (event.data.type === 'STRIPE_PAYMENT_COMPLETE_CLOSE') {
+        // El usuario cerró la ventana de éxito - limpiar y actualizar
+        console.log('📨 Recibido mensaje de cierre de ventana de éxito');
+        
+        // Verificar si ya procesamos el cierre para evitar múltiples limpiezas
+        const closeKey = `close_${event.data.sessionId || Date.now()}`;
+        if (processedPayments.has(closeKey)) {
+          console.log('⚠️ Cierre ya procesado, ignorando');
+          return;
+        }
+        setProcessedPayments(prev => new Set(prev).add(closeKey));
+        
+        // Limpiar carrito inmediatamente
+        console.log('🧹 Limpiando carrito después del pago con link...');
+        clearCart();
+        
+        // Limpiar cualquier estado residual
+        setTicket(null);
+        setShowStripePayment(false);
+        setView('home');
+        
+        // Refrescar historial de ventas
+        setSalesRefreshTrigger(prev => prev + 1);
+        
+        // Recargar productos frescos
+        console.log('🔄 Recargando productos...');
+        try {
+          fetchProducts();
+          setToast({ type: 'success', message: '¡Pago completado! Carrito limpiado y datos actualizados.' });
+        } catch (error) {
+          console.error('Error recargando productos:', error);
+        }
+        
+        if (event.data.action === 'reload_and_home') {
+          // Recargar la página completa solo si se solicita específicamente
           setTimeout(() => {
             window.location.reload();
-          }, 500);
+          }, 1000);
         }
       }
     };
 
+    // Listener para mensajes CustomEvent (QR directo)
+    const handleCustomEvent = (event: CustomEvent) => {
+      console.log('📱 Evento personalizado QR recibido:', event.detail);
+      
+      if (event.detail && event.detail.type === 'QR_PAYMENT_COMPLETED') {
+        console.log('🎫 ✅ PROCESANDO EVENTO QR DIRECTO:', event.detail);
+        
+        // Verificar si ya procesamos este pago con una clave más específica
+        const processKey = `qr_${event.detail.sessionId}`;
+        if (event.detail.sessionId && processedPayments.has(processKey)) {
+          console.log('⚠️ Pago QR ya procesado, ignorando evento duplicado:', event.detail.sessionId);
+          return;
+        }
+        
+        // Marcar como procesado inmediatamente
+        if (event.detail.sessionId) {
+          setProcessedPayments(prev => {
+            const newSet = new Set(prev);
+            newSet.add(processKey);
+            newSet.add(event.detail.sessionId); // También agregar el sessionId normal
+            return newSet;
+          });
+        }
+        
+        // Abrir ventana del ticket
+        console.log('🎫 Abriendo ventana del ticket para pago QR:', event.detail.sessionId);
+        const ticketUrl = `${window.location.origin}/payment-success.html?session_id=${event.detail.sessionId}`;
+        const ticketWindow = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
+        
+        if (ticketWindow) {
+          console.log('✅ Ventana de ticket QR abierta exitosamente');
+        } else {
+          console.warn('⚠️ No se pudo abrir la ventana del ticket - posible bloqueo de popups');
+          setToast({ type: 'warning', message: 'Permite popups para ver el ticket de compra QR' });
+        }
+        
+        // Limpiar carrito y actualizar
+        clearCart();
+        setShowStripePayment(false);
+        setView('home');
+        setToast({ type: 'success', message: '¡Pago QR procesado exitosamente! Ticket abierto en nueva ventana.' });
+        setSalesRefreshTrigger(prev => prev + 1);
+      }
+    };
+
     window.addEventListener('message', handleMessage);
+    window.addEventListener('qr-payment-completed', handleCustomEvent as EventListener);
 
     return () => {
       window.removeEventListener('message', handleMessage);
+      window.removeEventListener('qr-payment-completed', handleCustomEvent as EventListener);
     };
   }, []);
 
@@ -96,6 +223,9 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
   // Estado para el usuario autenticado - Consolidado en una sola variable
   type LocalUser = { id: string; email?: string };
   const [user, setUser] = useState<LocalUser | null>(null);
+  
+  // Control de pagos procesados para evitar duplicados
+  const [processedPayments, setProcessedPayments] = useState<Set<string>>(new Set());
   
   // Estado para Stripe Connect
   const [stripeConnectStatus, setStripeConnectStatus] = useState<{
@@ -484,6 +614,80 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
   };
 
   // Función para manejar éxito de pago de Stripe
+  // Función auxiliar que procesa el pago y opcionalmente abre ticket externo
+  const handleStripePaymentSuccessWithTicket = async (sessionId: string) => {
+    console.log('🎫 Procesando pago de Stripe para abrir ticket externo:', sessionId);
+    
+    try {
+      // En lugar de procesar internamente, abrir directamente la página de ticket de Stripe
+      console.log('🔗 Abriendo ticket de Stripe en nueva ventana...');
+      
+      // Abrir la página de éxito de Stripe con el sessionId para mostrar/imprimir ticket
+      const ticketUrl = `${window.location.origin}/payment-success.html?session_id=${sessionId}`;
+      const ticketWindow = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
+      
+      if (ticketWindow) {
+        console.log('✅ Ventana de ticket abierta exitosamente');
+      } else {
+        console.warn('⚠️ No se pudo abrir la ventana - posible bloqueo de popups');
+        setToast({ type: 'warning', message: 'Permite popups para ver el ticket de compra' });
+      }
+      
+      // Limpiar carrito y cerrar modal de pago
+      clearCart();
+      setShowStripePayment(false);
+      setView('home');
+      
+      // Mostrar mensaje de éxito
+      setToast({ type: 'success', message: '¡Pago procesado exitosamente! Ticket abierto en nueva ventana.' });
+      
+      // Refrescar historial de ventas
+      setSalesRefreshTrigger(prev => prev + 1);
+      
+      // También procesar la venta en segundo plano para guardarla en BD
+      try {
+        // Usar endpoint simplificado para evitar problemas de autenticación
+        const simpleResponse = await fetch('/api/stripe/process-payment-simple', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            userId: user?.id
+          })
+        });
+
+        const simpleResult = await simpleResponse.json();
+        
+        if (simpleResult.success) {
+          console.log('✅ Venta procesada correctamente en segundo plano');
+          // Refrescar historial adicional
+          setTimeout(() => {
+            setSalesRefreshTrigger(prev => prev + 1);
+          }, 1000);
+        } else {
+          console.warn('⚠️ Problema procesando venta en segundo plano:', simpleResult.error);
+        }
+      } catch (error) {
+        console.warn('⚠️ Error procesando venta en segundo plano (ticket ya mostrado):', error);
+        // Fallback al método original
+        try {
+          await handleStripePaymentSuccess(sessionId);
+        } catch (fallbackError) {
+          console.error('❌ También falló el método de respaldo:', fallbackError);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error en handleStripePaymentSuccessWithTicket:', error);
+      setToast({ 
+        type: 'error', 
+        message: 'Error procesando el pago: ' + (error instanceof Error ? error.message : 'Error desconocido')
+      });
+    }
+  };
+
   const handleStripePaymentSuccess = async (sessionId: string) => {
     console.log('🎉 Pago Stripe exitoso, procesando...', { sessionId });
     
@@ -494,8 +698,21 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
     if (!currentUser?.id) {
       console.log('⏳ Usuario no disponible, obteniendo sesión actual...');
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        // Intentar refrescar la sesión
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.warn('⚠️ Error obteniendo sesión:', sessionError);
+          // Intentar refrescar el token
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            console.error('❌ Error refrescando sesión:', refreshError);
+          } else if (refreshData?.session?.user) {
+            currentUser = { id: refreshData.session.user.id, email: refreshData.session.user.email };
+            setUser(currentUser);
+            console.log('✅ Sesión refrescada exitosamente');
+          }
+        } else if (session?.user) {
           currentUser = { id: session.user.id, email: session.user.email };
           setUser(currentUser); // Actualizar el estado también
           console.log('✅ Usuario obtenido de sesión:', currentUser);
@@ -703,30 +920,17 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       console.log('🔄 Refrescando productos después del pago...');
       await fetchProducts();
 
-      // ✅ NO MOSTRAR TICKET INTERNO DESPUÉS DE STRIPE
-      // El ticket de Stripe ya se mostró en la página /payment/success
-      // Solo mostrar mensaje de éxito y limpiar carrito
-      
-      console.log('✅ Pago de Stripe procesado exitosamente');
-      
-      // Mostrar mensaje de éxito
-      setToast({ type: 'success', message: '¡Pago procesado exitosamente! Venta guardada.' });
-      
-      // Limpiar carrito local después del pago exitoso
-      console.log('🧹 Limpiando carrito después del pago...');
+      // **LIMPIAR CARRITO DESPUÉS DEL PAGO EXITOSO**
+      console.log('🧹 Limpiando carrito después del pago Link exitoso...');
       clearCart();
-      console.log('✅ Carrito limpiado inmediatamente');
-      
-      // 🏠 REGRESAR DIRECTAMENTE AL HOME
-      console.log('🏠 Regresando al home después del pago de Stripe...');
-      // No es necesario hacer nada más, ya estamos en el home
-      
-      // Forzar actualización de la vista
-      console.log('🔄 Forzando re-renderizado...');
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('sales-updated'));
-        console.log('📡 Evento sales-updated disparado');
-      }, 500);
+
+      // Para pagos desde QR externos, debemos mostrar el ticket aquí
+      // porque el usuario está en la aplicación web principal
+      return {
+        success: true,
+        saleData: saleForLocalStorage,
+        shouldShowTicket: true // Indicar que se debe mostrar el ticket
+      };
       
     } catch (error) {
       console.error('❌ Error al procesar pago:', error);
@@ -734,6 +938,10 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
         type: 'error', 
         message: 'Error al procesar el pago: ' + (error instanceof Error ? error.message : 'Error desconocido')
       });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      };
     }
   };
   const { theme, setTheme, getThemeClass } = useTheme();
@@ -1791,30 +1999,12 @@ const [ticket, setTicket] = useState<{
             ) : stripeConnectStatus.connected ? (
               <div className="flex flex-col space-y-2">
                 <div className={`${btnBase} bg-gradient-to-r from-green-600 to-emerald-600 text-white border-green-600`}>
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center space-x-2">
-                      <CreditCard className="w-6 h-6" />
-                      <div className="text-left">
-                        <div className="font-bold">✅ Stripe Conectado</div>
-                        <div className="text-xs opacity-90">
-                          {stripeConnectStatus.account?.businessName}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => {
-                          console.log('🔄 Refrescando estado manualmente...');
-                          window.location.reload();
-                        }}
-                        className="text-xs bg-green-100 hover:bg-green-200 px-2 py-1 rounded text-green-700 opacity-75 hover:opacity-100"
-                        title="Refrescar estado"
-                      >
-                        🔄
-                      </button>
-                      <div className="text-right text-xs">
-                        <div>💰 ${stripeConnectStatus.stats?.totalCommission || '0.00'}</div>
-                        <div>📊 {stripeConnectStatus.stats?.totalSales || 0} ventas</div>
+                  <div className="flex items-center space-x-2">
+                    <CreditCard className="w-6 h-6" />
+                    <div className="text-left">
+                      <div className="font-bold">✅ Stripe Conectado</div>
+                      <div className="text-xs opacity-90">
+                        {stripeConnectStatus.account?.businessName}
                       </div>
                     </div>
                   </div>

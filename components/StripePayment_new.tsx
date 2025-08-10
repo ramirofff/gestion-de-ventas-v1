@@ -32,6 +32,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const [isPolling, setIsPolling] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('selection');
+  const [isProcessed, setIsProcessed] = useState(false); // Control para evitar múltiples procesamientos
   const { theme, getThemeClass } = useTheme();
 
   // Obtener usuario autenticado
@@ -75,7 +76,8 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
         setPaymentStatus('completed');
         setIsPolling(false);
         
-        if (onSuccess && event.data.sessionId) {
+        if (onSuccess && event.data.sessionId && !isProcessed) {
+          setIsProcessed(true);
           onSuccess(event.data.sessionId);
         }
       }
@@ -114,8 +116,33 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
         console.log('✅ Pago verificado exitosamente');
         setPaymentStatus('completed');
         setIsPolling(false);
-        if (onSuccess) {
-          setTimeout(() => onSuccess(sessionId), 1500);
+        
+        // Si es un pago QR, enviar evento personalizado al componente padre (solo una vez)
+        if (showQR && !isProcessed) {
+          console.log('🎫 Pago QR completado - Enviando evento personalizado...');
+          setIsProcessed(true); // Marcar como procesado inmediatamente
+          
+          // Enviar evento personalizado que será capturado por el listener en page.tsx
+          setTimeout(() => {
+            const qrEvent = new CustomEvent('qr-payment-completed', {
+              detail: {
+                type: 'QR_PAYMENT_COMPLETED',
+                sessionId: sessionId,
+                timestamp: new Date().toISOString(),
+                source: 'qr_payment_direct'
+              }
+            });
+            window.dispatchEvent(qrEvent);
+            console.log('✅ Evento QR personalizado enviado exitosamente');
+          }, 500);
+        } else if (showQR && isProcessed) {
+          console.log('⚠️ Pago QR ya procesado, evitando evento duplicado');
+        } else {
+          // Para pagos Link, procesar normalmente
+          if (onSuccess && !isProcessed) {
+            setIsProcessed(true);
+            setTimeout(() => onSuccess(sessionId), 1500);
+          }
         }
         return true;
       } else {
@@ -235,7 +262,12 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
       // Solo abrir automáticamente si es enlace directo (no QR)
       if (data.payment_url && !showQR) {
         console.log('🚀 Abriendo ventana de Stripe Checkout automáticamente (enlace directo)...');
-        window.open(data.payment_url, '_blank');
+        const paymentWindow = window.open(data.payment_url, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+        
+        if (!paymentWindow) {
+          console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
+          alert('Por favor permite popups para abrir el pago');
+        }
       }
       
       // Iniciar polling automáticamente para ambos casos
@@ -262,7 +294,12 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
 
   const handlePaymentClick = () => {
     if (paymentUrl) {
-      window.open(paymentUrl, '_blank');
+      const paymentWindow = window.open(paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+      
+      if (!paymentWindow) {
+        console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
+        alert('Por favor permite popups para abrir el pago');
+      }
       
       if (sessionId && !isPolling) {
         console.log('🚀 Iniciando polling después de abrir Stripe...');
@@ -419,6 +456,17 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                 </button>
               </div>
 
+              {/* Botón cancelar en modo selección */}
+              <button
+                onClick={onClose}
+                className={`w-full mt-4 py-2 px-4 rounded-lg border transition-colors ${getThemeClass({
+                  dark: 'border-gray-600 text-gray-400 hover:bg-gray-800',
+                  light: 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                })}`}
+              >
+                ← Cancelar
+              </button>
+
               {loading && (
                 <div className="flex items-center justify-center gap-2 mt-4">
                   <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
@@ -478,6 +526,17 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                         </span>
                       </div>
                     )}
+                    
+                    {/* Botón cancelar compra - siempre visible cuando hay QR */}
+                    <button
+                      onClick={onClose}
+                      className={`w-full mt-4 py-3 px-4 rounded-lg border-2 border-dashed transition-colors font-medium ${getThemeClass({
+                        dark: 'border-red-600 text-red-400 hover:bg-red-900/20 hover:border-red-500',
+                        light: 'border-red-500 text-red-600 hover:bg-red-50 hover:border-red-400'
+                      })}`}
+                    >
+                      ❌ Cancelar compra
+                    </button>
                     
                     {paymentStatus === 'completed' && (
                       <div className="text-green-500 text-sm font-bold mt-4">

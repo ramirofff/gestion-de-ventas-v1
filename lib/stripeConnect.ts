@@ -108,8 +108,8 @@ export async function createOnboardingLink(accountId: string): Promise<string> {
 
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3004'}/onboarding/refresh`,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3004'}/onboarding/complete`,
+      refresh_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3006'}/onboarding/refresh`,
+      return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3006'}/onboarding/complete`,
       type: 'account_onboarding',
     });
 
@@ -152,10 +152,10 @@ export async function createPaymentWithCommission({
 
     // Determinar URLs según el tipo de pago
     const successUrl = isQRPayment 
-      ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3004'}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`
-      : `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3004'}/payment/thank-you?session_id={CHECKOUT_SESSION_ID}`;
+      ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3006'}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`
+      : `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3006'}/payment/thank-you?session_id={CHECKOUT_SESSION_ID}`;
     
-    const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3004'}/payment/cancel`;
+    const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3006'}/payment/cancel`;
     // Para cuentas virtuales de Argentina, procesar el pago sin transfer automático
     if (connectedAccountId.startsWith('ar_virtual_')) {
       console.log('🇦🇷 Procesando pago para cuenta virtual Argentina');

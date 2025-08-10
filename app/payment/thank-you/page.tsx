@@ -260,7 +260,21 @@ export default function ThankYouPage() {
                 🖨️ Imprimir Comprobante
               </button>
               <button
-                onClick={() => window.close()}
+                onClick={() => {
+                  // Notificar a la ventana padre antes de cerrar
+                  try {
+                    if (window.opener && !window.opener.closed) {
+                      window.opener.postMessage({
+                        type: 'STRIPE_PAYMENT_COMPLETE_CLOSE',
+                        action: 'reload_products',
+                        sessionId: ticketData.ticket_id
+                      }, '*');
+                    }
+                  } catch (e) {
+                    console.warn('No se pudo notificar cierre a ventana padre');
+                  }
+                  window.close();
+                }}
                 className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
               >
                 ✓ Cerrar

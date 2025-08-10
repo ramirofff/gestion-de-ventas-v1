@@ -119,6 +119,24 @@
             line-height: 1.4;
         }
         
+        .ticket-details {
+            margin: 25px 0;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 12px;
+            border-left: 4px solid #2563eb;
+        }
+        
+        .ticket-section h3 {
+            color: #2563eb;
+            font-weight: 600;
+            font-size: 18px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
         .close-btn {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
@@ -130,10 +148,57 @@
             cursor: pointer;
             margin-top: 20px;
             transition: transform 0.2s;
+            flex: 1;
         }
         
-        .close-btn:hover {
+        .print-btn {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+            flex: 1;
+        }
+        
+        .close-btn:hover, .print-btn:hover {
             transform: scale(1.05);
+        }
+        
+        /* Estilos para impresión */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            
+            .close-btn, .print-btn {
+                display: none !important;
+            }
+            
+            .instructions {
+                display: none !important;
+            }
+            
+            .footer {
+                font-size: 12px !important;
+                color: #666 !important;
+            }
+            
+            .container {
+                box-shadow: none !important;
+                border: 1px solid #ddd !important;
+                max-width: none !important;
+                padding: 20px !important;
+            }
+            
+            .ticket-details {
+                border: 1px solid #ddd !important;
+            }
         }
     </style>
 </head>
@@ -165,9 +230,19 @@
             </div>
         </div>
         
-        <button class="close-btn" onclick="closeWindow()">
-            Cerrar Ventana
-        </button>
+        <!-- Sección de detalles del ticket (se llena dinámicamente) -->
+        <div id="ticket-details" class="ticket-details">
+            <!-- Los detalles se cargarán aquí via JavaScript -->
+        </div>
+        
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+            <button class="print-btn" onclick="printTicket()">
+                🖨️ Imprimir
+            </button>
+            <button class="close-btn" onclick="closeWindow()">
+                ✓ Cerrar
+            </button>
+        </div>
         
         <div class="footer">
             Procesado de forma segura con Stripe<br/>
@@ -177,17 +252,147 @@
     </div>
     
     <script>
+        // Variables globales
+        let paymentData = null; // Variable global para almacenar datos del pago
+        
         // Obtener session_id de la URL
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
         
         if (sessionId) {
             document.getElementById('sessionId').textContent = sessionId.slice(-12);
+            // Intentar obtener los detalles del pago
+            fetchPaymentDetails(sessionId);
+        }
+        
+        // Función para obtener detalles del pago desde la API
+        async function fetchPaymentDetails(sessionId) {
+            try {
+                console.log('🔍 Obteniendo detalles del pago para página estática...');
+                
+                // Usar el endpoint específico para la página estática
+                const response = await fetch('/api/stripe/payment-details', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        session_id: sessionId
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('📦 Datos recibidos:', data);
+                    
+                    if (data.success && data.cart_data && data.cart_data.length > 0) {
+                        // **GUARDAR EN VARIABLE GLOBAL**
+                        paymentData = data;
+                        console.log('💾 Datos guardados en variable global paymentData:', paymentData);
+                        
+                        displayTicketDetails(data);
+                        
+                        // **NOTA: El procesamiento de venta ahora se hace automáticamente en el servidor**
+                        console.log('ℹ️ El procesamiento de venta se realiza automáticamente en el servidor');
+                        
+                        return;
+                    } else {
+                        console.log('⚠️ No se encontraron datos del carrito');
+                    }
+                } else {
+                    console.log('❌ Error en la respuesta:', response.status, response.statusText);
+                }
+                
+            } catch (error) {
+                console.log('❌ Error obteniendo detalles del pago:', error);
+            }
+        }
+        
+        // Función para mostrar los detalles del ticket
+        function displayTicketDetails(paymentData) {
+            const ticketDetails = document.getElementById('ticket-details');
+            
+            if (!paymentData.cart_data || paymentData.cart_data.length === 0) {
+                return;
+            }
+            
+            let ticketHTML = '<div class="ticket-section">';
+            ticketHTML += '<h3>📄 Detalles de tu Compra</h3>';
+            
+            // Items
+            paymentData.cart_data.forEach((item, index) => {
+                const itemTotal = (item.price || 0) * (item.quantity || 1);
+                ticketHTML += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
+                        <div>
+                            <div style="font-weight: 500; color: #1f2937; font-size: 16px;">${item.name || 'Producto'}</div>
+                            <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">Cantidad: ${item.quantity || 1}</div>
+                        </div>
+                        <div style="font-weight: 600; color: #1f2937; font-size: 16px;">$${itemTotal.toFixed(2)}</div>
+                    </div>
+                `;
+            });
+            
+            // Cálculos de total
+            const subtotal = paymentData.cart_data.reduce((sum, item) => sum + ((item.original_price || item.price || 0) * (item.quantity || 1)), 0);
+            const discount = subtotal - paymentData.total;
+            
+            if (discount > 0) {
+                ticketHTML += `
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; color: #6b7280; font-size: 15px;">
+                        <span>Subtotal:</span>
+                        <span>$${subtotal.toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; color: #16a34a; font-size: 15px;">
+                        <span>Descuento aplicado:</span>
+                        <span>-$${discount.toFixed(2)}</span>
+                    </div>
+                `;
+            }
+            
+            ticketHTML += `
+                <div style="display: flex; justify-content: space-between; padding: 15px 0; margin-top: 12px; border-top: 2px solid #2563eb; font-size: 20px; font-weight: bold; color: #1f2937;">
+                    <span>Total Pagado:</span>
+                    <span style="color: #2563eb;">$${paymentData.total.toFixed(2)}</span>
+                </div>
+            `;
+            
+            // Agregar botón del ticket oficial de Stripe si está disponible
+            if (paymentData.stripe_receipt_url) {
+                ticketHTML += `
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                        <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">
+                            🧾 También puedes descargar el ticket oficial de pago:
+                        </p>
+                        <a href="${paymentData.stripe_receipt_url}" target="_blank" 
+                           style="display: inline-block; background: #6366f1; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; transition: background 0.2s;">
+                            📄 Ver Ticket Oficial
+                        </a>
+                    </div>
+                `;
+            }
+            
+            ticketHTML += '</div>';
+            ticketDetails.innerHTML = ticketHTML;
+        }
+        
+        // Función para imprimir ticket
+        function printTicket() {
+            window.print();
         }
         
         // Función para cerrar ventana
         function closeWindow() {
             try {
+                // Notificar al parent que actualize la página antes de cerrar
+                if (window.opener && !window.opener.closed) {
+                    console.log('📤 Notificando al parent que actualice la página...');
+                    window.opener.postMessage({
+                        type: 'TICKET_CLOSED',
+                        action: 'refresh_page',
+                        timestamp: new Date().toISOString()
+                    }, window.location.origin);
+                }
                 window.close();
             } catch (e) {
                 window.location.href = 'about:blank';
@@ -203,18 +408,91 @@
             }
         }, 60000);
         
+        // Función para procesar la venta una sola vez
+        let saleProcessed = false;
+        
+        async function processSale(sessionId) {
+            if (saleProcessed) {
+                console.log('⏭️ Venta ya procesada, saltando...');
+                return;
+            }
+            
+            try {
+                console.log('💾 Procesando venta para sessionId:', sessionId);
+                
+                const response = await fetch('/api/stripe/process-payment-simple', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        sessionId: sessionId,
+                        userId: paymentData.userId
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Venta procesada exitosamente:', result);
+                    saleProcessed = true;
+                } else {
+                    console.error('❌ Error procesando venta:', response.status, response.statusText);
+                }
+            } catch (error) {
+                console.error('❌ Error en processSale:', error);
+            }
+        }
+        
         // Enviar mensaje al vendedor si la ventana padre existe
+        // PERO solo si NO fue abierta por nuestro sistema interno (evitar bucles)
         try {
-            if (window.opener && !window.opener.closed && sessionId) {
+            console.log('🔍 Verificando window.opener...', {
+                hasOpener: !!window.opener,
+                openerClosed: window.opener ? window.opener.closed : 'N/A',
+                sessionId: sessionId,
+                currentOrigin: window.location.origin,
+                referrer: document.referrer
+            });
+            
+            // Solo enviar mensajes si viene de un pago externo (móvil), no de nuestro sistema
+            const isExternalPayment = !document.referrer.includes(window.location.origin);
+            
+            if (window.opener && !window.opener.closed && sessionId && isExternalPayment) {
+                console.log('📤 Pago externo detectado - Enviando notificación al vendedor...');
+                console.log('🎯 Datos del mensaje:', {
+                    sessionId: sessionId,
+                    origen: window.location.origin,
+                    esExterno: true
+                });
+                
+                // Enviar múltiples tipos de mensaje para asegurar compatibilidad
                 window.opener.postMessage({
                     type: 'PAYMENT_COMPLETED_FROM_QR',
                     sessionId: sessionId,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    source: 'static_page'
                 }, window.location.origin);
-                console.log('Mensaje enviado al vendedor');
+                
+                window.opener.postMessage({
+                    type: 'STRIPE_PAYMENT_SUCCESS',
+                    sessionId: sessionId,
+                    timestamp: new Date().toISOString(),
+                    source: 'qr_payment',
+                    showTicket: true
+                }, window.location.origin);
+                
+                console.log('✅ Mensajes enviados al vendedor exitosamente');
+            } else {
+                console.log('⚠️ No enviando mensaje - Pago interno o condiciones no cumplidas:', {
+                    hasOpener: !!window.opener,
+                    openerClosed: window.opener ? window.opener.closed : 'N/A',
+                    hasSessionId: !!sessionId,
+                    isExternal: isExternalPayment,
+                    referrer: document.referrer
+                });
             }
         } catch (e) {
-            console.log('No se puede comunicar con ventana padre:', e);
+            console.log('❌ No se puede comunicar con ventana padre:', e);
         }
     </script>
 </body>
