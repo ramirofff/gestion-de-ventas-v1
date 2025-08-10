@@ -26,12 +26,13 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider = ({ children }: ThemeProviderProps) => {
-  // Siempre iniciar en 'dark' por defecto, ignorando valores inválidos
+  // Siempre iniciar en 'dark' por defecto, salvo que el usuario haya elegido 'light' explícitamente
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('theme');
-      if (savedTheme === 'dark') return 'dark';
       if (savedTheme === 'light') return 'light';
+      // Cualquier otro caso, incluso null o 'dark', forzar 'dark'
+      return 'dark';
     }
     return 'dark';
   });
@@ -101,12 +102,10 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
       if (currentUser && themeLoaded) {
         try {
           const userTheme = await UserSettingsManager.getTheme(currentUser.id);
-          if (userTheme === 'dark') {
-            setTheme('dark');
-            if (typeof window !== 'undefined') localStorage.setItem('theme', 'dark');
-          } else if (userTheme === 'light') {
-            setTheme('light');
-            if (typeof window !== 'undefined') localStorage.setItem('theme', 'light');
+          if (userTheme === 'dark' || userTheme === 'light') {
+            // Si la preferencia en Supabase es distinta al estado/localStorage, forzarla
+            setTheme(userTheme);
+            if (typeof window !== 'undefined') localStorage.setItem('theme', userTheme);
           } else {
             setTheme('dark');
             if (typeof window !== 'undefined') localStorage.setItem('theme', 'dark');

@@ -70,15 +70,17 @@ class UserSettingsManager {
     try {
       const { error } = await supabase
         .from('user_settings')
-        .upsert({
-          user_id: userId,
-          ...settings,
-          updated_at: new Date().toISOString()
-        });
-      
+        .upsert([
+          {
+            user_id: userId,
+            ...settings,
+            updated_at: new Date().toISOString()
+          }
+        ], { onConflict: 'user_id' });
+
       if (error) {
         console.warn('Error updating user settings (tabla podría no existir):', error);
-        
+
         // Fallback: Si la tabla no existe, simular que se guardó correctamente
         if (error.message?.includes('does not exist') || error.code === 'PGRST106') {
           console.log('🔄 Simulando guardado (tabla user_settings no existe)');
@@ -86,7 +88,7 @@ class UserSettingsManager {
         }
         return false;
       }
-      
+
       return true;
     } catch (err) {
       console.error('Error updating user settings:', err);
