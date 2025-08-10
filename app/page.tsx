@@ -166,42 +166,40 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
     };
 
     // Listener para mensajes CustomEvent (QR directo)
+    // Solo permitir una ventana de ticket QR por sessionId
+    let qrTicketWindowRef: Window | null = null;
     const handleCustomEvent = (event: CustomEvent) => {
       console.log('📱 Evento personalizado QR recibido:', event.detail);
-      
       if (event.detail && event.detail.type === 'QR_PAYMENT_COMPLETED') {
         console.log('🎫 ✅ PROCESANDO EVENTO QR DIRECTO:', event.detail);
-        
-        // Verificar si ya procesamos este pago con una clave más específica
         const processKey = `qr_${event.detail.sessionId}`;
         if (event.detail.sessionId && processedPayments.has(processKey)) {
           console.log('⚠️ Pago QR ya procesado, ignorando evento duplicado:', event.detail.sessionId);
           return;
         }
-        
         // Marcar como procesado inmediatamente
         if (event.detail.sessionId) {
           setProcessedPayments(prev => {
             const newSet = new Set(prev);
             newSet.add(processKey);
-            newSet.add(event.detail.sessionId); // También agregar el sessionId normal
+            newSet.add(event.detail.sessionId);
             return newSet;
           });
         }
-        
-        // Abrir ventana del ticket
-        console.log('🎫 Abriendo ventana del ticket para pago QR:', event.detail.sessionId);
+        // Abrir solo una ventana de ticket QR por sessionId
         const ticketUrl = `${window.location.origin}/payment-success.html?session_id=${event.detail.sessionId}`;
-        const ticketWindow = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
-        
-        if (ticketWindow) {
-          console.log('✅ Ventana de ticket QR abierta exitosamente');
+        if (!qrTicketWindowRef || qrTicketWindowRef.closed) {
+          qrTicketWindowRef = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
+          if (qrTicketWindowRef) {
+            console.log('✅ Ventana de ticket QR abierta exitosamente');
+          } else {
+            console.warn('⚠️ No se pudo abrir la ventana del ticket - posible bloqueo de popups');
+            setToast({ type: 'warning', message: 'Permite popups para ver el ticket de compra QR' });
+          }
         } else {
-          console.warn('⚠️ No se pudo abrir la ventana del ticket - posible bloqueo de popups');
-          setToast({ type: 'warning', message: 'Permite popups para ver el ticket de compra QR' });
+          qrTicketWindowRef.focus();
+          console.log('🔄 Ticket QR ya abierto, trayendo al frente');
         }
-        
-        // Limpiar carrito y actualizar
         clearCart();
         setShowStripePayment(false);
         setView('home');
@@ -236,71 +234,80 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
     error?: string;
   }>({ connected: false, loading: true });
   
-  // Obtener usuario autenticado al cargar
+  // Obtener usuario autenticado y suscribirse a cambios de sesión SOLO UNA VEZ
+  const { setTheme: setThemeContext } = useTheme();
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    let unsubscribe: (() => void) | undefined;
+    const initAuth = async () => {
+      // Obtener usuario actual
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user ? { id: user.id, email: user.email } : null);
+      // Forzar dark si no hay preferencia guardada
+      if (typeof window !== 'undefined') {
+        const savedTheme = localStorage.getItem('theme');
+        if (!savedTheme) {
+          setThemeContext('dark');
+        }
+      }
+      // Suscribirse a cambios de sesión
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
+        if (typeof window !== 'undefined') {
+          const savedTheme = localStorage.getItem('theme');
+          if (!savedTheme) {
+            setThemeContext('dark');
+          }
+        }
+      });
+      unsubscribe = () => subscription.unsubscribe();
+    };
+    initAuth();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [setThemeContext]);
 
   // Verificar estado de Stripe Connect cuando el usuario cambie
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout | undefined;
-    
-    const checkStripeConnectStatus = async () => {
-      if (!user) {
-        setStripeConnectStatus({ connected: false, loading: false });
-        return;
-      }
-
-      try {
-        const response = await fetch('/api/stripe-connect/status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id })
-        });
-        const data = await response.json();
-
-        if (response.ok && data.connected) {
-          setStripeConnectStatus({
-            connected: true,
-            loading: false,
-            account: data.account,
-            stats: data.stats,
+    useEffect(() => {
+      let timeoutId: NodeJS.Timeout | undefined;
+      const checkStripeConnectStatus = async () => {
+        if (!user) {
+          setStripeConnectStatus({ connected: false, loading: false });
+          return;
+        }
+        try {
+          const response = await fetch('/api/stripe-connect/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id })
           });
-        } else if (data.error === 'database_not_setup') {
-          console.log('🚨 Base de datos no configurada - Deteniendo verificaciones');
-          setStripeConnectStatus({ 
-            connected: false, 
-            loading: false,
-            error: 'Database not setup' 
-          });
-          return; // No continuar verificando si no hay tablas
-        } else {
+          const data = await response.json();
+          if (response.ok && data.connected) {
+            setStripeConnectStatus({
+              connected: true,
+              loading: false,
+              account: data.account,
+              stats: data.stats,
+            });
+            // Si venimos del onboarding, forzar recarga de productos y home
+            if (window.location.pathname.includes('/onboarding/complete')) {
+              setView('home');
+              fetchProducts();
+              setTimeout(() => window.location.replace('/'), 500);
+            }
+          } else if (data.error === 'database_not_setup') {
+            setStripeConnectStatus({ connected: false, loading: false, error: 'Database not setup' });
+            return;
+          } else {
+            setStripeConnectStatus({ connected: false, loading: false });
+          }
+        } catch (error) {
           setStripeConnectStatus({ connected: false, loading: false });
         }
-      } catch (error) {
-        console.error('Error verificando Stripe Connect:', error);
-        setStripeConnectStatus({ connected: false, loading: false });
-      }
-    };
-
-    // Verificar una sola vez al iniciar
-    checkStripeConnectStatus();
-
-    // Limpiar timeout al desmontar
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [user]);
+      };
+      checkStripeConnectStatus();
+      return () => { if (timeoutId) clearTimeout(timeoutId); };
+    }, [user]);
 
   // Refrescar estado cuando la página se vuelva visible (cuando regrese de otra página)
   useEffect(() => {
@@ -451,9 +458,8 @@ const [showVerificationSuccess, setShowVerificationSuccess] = useState(false);
 const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0); // Para refrescar el historial de ventas
 const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hardcodeado - plataforma ya configurada
 
-  // Cargar usuario autenticado de Supabase al montar y en cambios de sesión
+  // Mostrar mensaje de verificación exitosa si corresponde
   useEffect(() => {
-    // Verificar si el usuario viene de verificación exitosa
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('verified') === 'true') {
       setShowVerificationSuccess(true);
@@ -462,23 +468,7 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       // Ocultar el mensaje después de 5 segundos
       setTimeout(() => setShowVerificationSuccess(false), 5000);
     }
-
-
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user ? { id: user.id, email: user.email } : null);
-    };
-    getUser();
-
     // Stripe ya está configurado - no necesita verificación
-
-    // Suscribirse a cambios de sesión
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ? { id: session.user.id, email: session.user.email } : null);
-    });
-    return () => {
-      listener?.subscription.unsubscribe();
-    };
   }, []);
   const [view, setView] = useState<ViewType>('home');
   const [faqAbierta, setFaqAbierta] = useState<string | null>(null);
@@ -631,23 +621,25 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
   // Función para manejar éxito de pago de Stripe
   // Función auxiliar que procesa el pago y opcionalmente abre ticket externo
   // Evitar doble apertura de ticket
-  let ticketWindowRef: Window | null = null;
+  // Solo permitir una ventana de ticket por sessionId de pago por link
+  const ticketWindowRefs: { [sessionId: string]: Window | null } = {};
   const handleStripePaymentSuccessWithTicket = async (sessionId: string) => {
     console.log('🎫 Procesando pago de Stripe para abrir ticket externo:', sessionId);
     try {
-      // Solo abrir si no hay ventana abierta o está cerrada
       const ticketUrl = `${window.location.origin}/payment-success.html?session_id=${sessionId}`;
-      if (!ticketWindowRef || ticketWindowRef.closed) {
-        ticketWindowRef = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
-        if (ticketWindowRef) {
+      // Si ya hay una ventana para este sessionId y está abierta, enfocar
+      if (ticketWindowRefs[sessionId] && !ticketWindowRefs[sessionId]!.closed) {
+        ticketWindowRefs[sessionId]!.focus();
+        console.log('🔄 Ticket ya abierto para este pago, trayendo al frente');
+      } else {
+        // Abrir nueva ventana y guardar referencia
+        ticketWindowRefs[sessionId] = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
+        if (ticketWindowRefs[sessionId]) {
           console.log('✅ Ventana de ticket abierta exitosamente');
         } else {
           console.warn('⚠️ No se pudo abrir la ventana - posible bloqueo de popups');
           setToast({ type: 'warning', message: 'Permite popups para ver el ticket de compra' });
         }
-      } else {
-        ticketWindowRef.focus();
-        console.log('🔄 Ticket ya abierto, trayendo al frente');
       }
       // Limpiar carrito y cerrar modal de pago
       clearCart();
@@ -937,28 +929,29 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       };
     }
   };
-  const { theme, setTheme, getThemeClass } = useTheme();
+  const { theme, setTheme: setThemeContext2, getThemeClass } = useTheme();
   // Resto de estados
   const { products, loading, setProducts, fetchProducts } = useProductsContext();
 
   // Modal de vinculación Stripe
+  // Modal de vinculación Stripe: SIEMPRE tema dark, alto contraste y legibilidad
   const stripeModal = (
     <Modal open={showStripeModal} onClose={() => setShowStripeModal(false)} title="Vincula tu cuenta con Stripe">
-      <div className="flex flex-col items-center gap-4 p-4">
-        <CreditCard className="w-12 h-12 text-blue-500 mb-2" />
-        <h2 className="text-xl font-bold text-blue-600 mb-2">Debes vincular tu cuenta con Stripe para poder cobrar</h2>
-        <p className="text-gray-700 dark:text-gray-300 text-center mb-4">Configura tu cuenta de Stripe Connect para habilitar los cobros y recibir pagos de tus ventas.</p>
+      <div className="flex flex-col items-center gap-4 p-6 bg-zinc-900 rounded-2xl border border-zinc-800 shadow-2xl max-w-md mx-auto">
+        <CreditCard className="w-14 h-14 mb-2 text-blue-400 drop-shadow-lg" />
+        <h2 className="text-2xl font-extrabold mb-2 text-blue-300 text-center tracking-tight">Debes vincular tu cuenta con Stripe para poder cobrar</h2>
+        <p className="text-center mb-4 text-zinc-200 text-base leading-relaxed">Configura tu cuenta de Stripe Connect para habilitar los cobros y recibir pagos de tus ventas.<br/>Es rápido, seguro y solo toma 2 minutos.</p>
         <a
           href="/stripe-connect-manual"
           target="_blank"
           rel="noopener noreferrer"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold text-lg transition-colors"
+          className="px-8 py-3 rounded-xl font-bold text-lg bg-gradient-to-r from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 text-white shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
         >
           Vincular con Stripe
         </a>
         <button
           onClick={() => setShowStripeModal(false)}
-          className="mt-2 text-blue-500 hover:underline"
+          className="mt-3 text-blue-400 hover:underline text-base font-medium focus:outline-none"
         >
           Cancelar
         </button>
@@ -1509,7 +1502,7 @@ const [ticket, setTicket] = useState<{
         emoji: theme === 'dark' ? '☀️' : '🌙',
         desc: 'Modo claro/oscuro',
         color: 'indigo',
-        accion: () => setTheme(theme === 'dark' ? 'light' : 'dark')
+  accion: () => setThemeContext2(theme === 'dark' ? 'light' : 'dark')
       },
       {
         id: 'export-sales',
@@ -2042,7 +2035,7 @@ const [ticket, setTicket] = useState<{
               </div>
             )}
             <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setThemeContext2(theme === 'dark' ? 'light' : 'dark')}
               className={`${btnBase} ${btnTheme} ml-4 transition-transform hover:scale-105`}
               aria-label="Toggle light/dark mode"
             >

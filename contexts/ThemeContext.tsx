@@ -26,13 +26,12 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider = ({ children }: ThemeProviderProps) => {
-  // Siempre iniciar en 'dark' por defecto
+  // Siempre iniciar en 'dark' por defecto, ignorando valores inválidos
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('theme') as Theme;
-      if (savedTheme === 'light' || savedTheme === 'dark') {
-        return savedTheme;
-      }
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'dark') return 'dark';
+      if (savedTheme === 'light') return 'light';
     }
     return 'dark';
   });
@@ -43,11 +42,17 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   useEffect(() => {
     // Al montar, sincronizar localStorage y clase HTML con el tema actual
     if (typeof window !== 'undefined') {
-      localStorage.setItem('theme', theme);
-      if (theme === 'dark') {
+      if (theme !== 'dark' && theme !== 'light') {
+        setTheme('dark');
+        localStorage.setItem('theme', 'dark');
         document.documentElement.classList.add('dark');
       } else {
-        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', theme);
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
       }
       setThemeLoaded(true);
     }
@@ -96,26 +101,19 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
       if (currentUser && themeLoaded) {
         try {
           const userTheme = await UserSettingsManager.getTheme(currentUser.id);
-          if (userTheme === 'light' || userTheme === 'dark') {
-            if (userTheme !== theme) {
-              setTheme(userTheme);
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('theme', userTheme);
-              }
-            }
-          } else {
-            // Si el valor en Supabase es inválido, forzar 'dark'
+          if (userTheme === 'dark') {
             setTheme('dark');
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('theme', 'dark');
-            }
+            if (typeof window !== 'undefined') localStorage.setItem('theme', 'dark');
+          } else if (userTheme === 'light') {
+            setTheme('light');
+            if (typeof window !== 'undefined') localStorage.setItem('theme', 'light');
+          } else {
+            setTheme('dark');
+            if (typeof window !== 'undefined') localStorage.setItem('theme', 'dark');
           }
         } catch (error) {
-          console.warn('No se pudo cargar el tema del usuario:', error);
           setTheme('dark');
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('theme', 'dark');
-          }
+          if (typeof window !== 'undefined') localStorage.setItem('theme', 'dark');
         }
       }
     };
