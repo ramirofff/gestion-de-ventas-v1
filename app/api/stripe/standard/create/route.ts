@@ -24,8 +24,8 @@ export async function POST(request: NextRequest) {
     // Crear enlace de onboarding para Standard
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
-      refresh_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/stripe/express/refresh`,
-      return_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/stripe/express/return`,
+  refresh_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://gestion-de-ventas-v1.vercel.app'}/stripe/express/refresh`,
+  return_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://gestion-de-ventas-v1.vercel.app'}/stripe/express/return`,
       type: 'account_onboarding',
     });
 
