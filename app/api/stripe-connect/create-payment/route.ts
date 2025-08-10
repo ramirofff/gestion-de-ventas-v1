@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
       customerEmail: customerEmail || userEmail, // Usar automáticamente el email del usuario
       isQRPayment: isQRPayment, // Pasar el parámetro QR
       cartData: cartData, // Pasar los datos del carrito
+      userId: userId, // Pasar el userId a los metadatos
     });
 
     console.log('✅ Sesión de pago creada:', session.id);

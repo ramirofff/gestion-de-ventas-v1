@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '../../../../lib/stripe-server';
+import { createSale } from '../../../../lib/sales';
 
 // Endpoint específico para la página HTML estática de payment-success
 // No requiere autenticación, solo obtiene datos públicos del pago
@@ -56,34 +57,65 @@ export async function POST(request: NextRequest) {
     try {
       console.log('💾 STATIC: Intentando procesar venta automáticamente...');
       
-      // Obtener userId desde metadata de la sesión
-      const userId = session.metadata?.userId;
+      // Obtener userId desde metadata de la sesión (corregido user_id)
+      const userId = session.metadata?.user_id;
       
       if (userId && session.payment_intent) {
         console.log('💾 STATIC: Procesando venta para userId:', userId);
+        console.log('💾 STATIC: PaymentIntent:', session.payment_intent);
         
-        // Llamar al endpoint de procesamiento simple
-        const processResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3009'}/api/stripe/process-payment-simple`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sessionId: session_id,
-            userId: userId
-          })
+        // Procesar los items de la sesión
+        const stripeItems = session.line_items?.data.map((lineItem: any) => {
+          const priceInDollars = lineItem.price.unit_amount / 100;
+          return {
+            id: lineItem.price.product || `stripe_${Date.now()}_${Math.random()}`,
+            name: lineItem.description || lineItem.price.product_data?.name || 'Producto',
+            price: priceInDollars,
+            original_price: priceInDollars,
+            quantity: lineItem.quantity,
+            category: '',
+            user_id: userId,
+            image_url: '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            stock_quantity: 999999,
+            inactive: false
+          };
+        }) || [];
+
+        const totalFromStripe = (session.amount_total || 0) / 100;
+
+        console.log('💾 STATIC: Creando venta directamente:', { 
+          items: stripeItems.length, 
+          total: totalFromStripe,
+          userId 
         });
 
-        if (processResponse.ok) {
-          const result = await processResponse.json();
-          console.log('✅ STATIC: Venta procesada automáticamente:', result);
+        // Crear venta directamente usando la función importada
+        const saleResult = await createSale(
+          stripeItems,
+          totalFromStripe,
+          userId,
+          undefined, // clientId
+          session.payment_intent as string,
+          {
+            stripe_session_id: session_id,
+            customer_email: session.customer_email,
+            platform: 'stripe_checkout_qr'
+          },
+          true // useAdminClient = true para bypassing RLS
+        );
+
+        if (saleResult.error) {
+          console.error('❌ STATIC: Error creando venta directamente:', saleResult.error);
         } else {
-          console.error('❌ STATIC: Error procesando venta automáticamente:', processResponse.status);
+          console.log('✅ STATIC: Venta creada directamente:', saleResult.data?.[0]?.id);
         }
       } else {
         console.log('⚠️ STATIC: No se puede procesar venta - datos faltantes:', {
           hasUserId: !!userId,
-          hasPaymentIntent: !!session.payment_intent
+          hasPaymentIntent: !!session.payment_intent,
+          hasLineItems: !!session.line_items?.data?.length
         });
       }
     } catch (error) {

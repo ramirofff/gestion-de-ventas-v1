@@ -130,6 +130,7 @@ export async function createPaymentWithCommission({
   customerEmail,
   isQRPayment = false, // Nuevo parámetro
   cartData = [], // Agregar datos del carrito
+  userId, // Agregar userId para metadatos
 }: {
   connectedAccountId: string;
   amount: number;
@@ -139,6 +140,7 @@ export async function createPaymentWithCommission({
   customerEmail?: string;
   isQRPayment?: boolean;
   cartData?: any[]; // Agregar tipo para datos del carrito
+  userId?: string; // Agregar tipo para userId
 }) {
   try {
     const commissionAmount = Math.round(amount * commissionRate);
@@ -181,6 +183,7 @@ export async function createPaymentWithCommission({
           connected_account: connectedAccountId,
           commission_rate: commissionRate.toString(),
           cart_data: JSON.stringify(cartData), // Agregar datos del carrito
+          user_id: userId || '', // Agregar userId a metadatos con fallback
         },
       });
 
@@ -215,6 +218,7 @@ export async function createPaymentWithCommission({
         connected_account: connectedAccountId,
         commission_rate: commissionRate.toString(),
         cart_data: JSON.stringify(cartData), // Agregar datos del carrito
+        user_id: userId || '', // Agregar userId a metadatos con fallback
       },
     });
 
