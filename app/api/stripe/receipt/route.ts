@@ -18,8 +18,33 @@ export async function POST(request: NextRequest) {
 
     console.log('🧾 Obteniendo recibo para payment_intent:', payment_intent_id);
 
+    // Limpiar el payment_intent_id - puede venir como objeto o string
+    let paymentIntentId: string;
+    
+    if (typeof payment_intent_id === 'string') {
+      // Si viene como string, puede ser un JSON string o un ID limpio
+      try {
+        const parsed = JSON.parse(payment_intent_id);
+        paymentIntentId = parsed.id || payment_intent_id;
+      } catch {
+        // No es JSON, usar como está
+        paymentIntentId = payment_intent_id;
+      }
+    } else if (payment_intent_id?.id) {
+      // Si viene como objeto, extraer el ID
+      paymentIntentId = payment_intent_id.id;
+    } else {
+      console.error('❌ payment_intent_id inválido:', payment_intent_id);
+      return NextResponse.json({ 
+        success: false, 
+        error: 'payment_intent_id inválido' 
+      }, { status: 400 });
+    }
+
+    console.log('🔍 Usando payment_intent_id limpio:', paymentIntentId);
+
     // Obtener el payment intent de Stripe
-    const paymentIntent = await stripe.paymentIntents.retrieve(payment_intent_id);
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
     
     if (!paymentIntent) {
       return NextResponse.json(

@@ -7,7 +7,7 @@ export async function createSale(
   total: number, 
   userId?: string, 
   clientId?: string,
-  stripePaymentIntentId?: string,
+  stripePaymentIntentId?: string | any,
   metadata?: any,
   useAdminClient = false // Nuevo parámetro para usar el cliente admin
 ) {
@@ -20,13 +20,34 @@ export async function createSale(
     console.log('- StripeID recibido:', stripePaymentIntentId);
     console.log('- UseAdminClient:', useAdminClient);
     
+    // LIMPIAR EL PAYMENT INTENT ID SI VIENE COMO OBJETO
+    let cleanPaymentIntentId: string | undefined = undefined;
+    
+    if (stripePaymentIntentId) {
+      if (typeof stripePaymentIntentId === 'string') {
+        try {
+          // Intentar parsear por si es un JSON string
+          const parsed = JSON.parse(stripePaymentIntentId);
+          cleanPaymentIntentId = parsed.id || stripePaymentIntentId;
+        } catch {
+          // No es JSON, usar como está
+          cleanPaymentIntentId = stripePaymentIntentId;
+        }
+      } else if (typeof stripePaymentIntentId === 'object' && stripePaymentIntentId.id) {
+        // Si es un objeto, extraer el ID
+        cleanPaymentIntentId = stripePaymentIntentId.id;
+      }
+    }
+    
+    console.log('🔧 Payment Intent ID limpio:', cleanPaymentIntentId);
+    
     // Seleccionar el cliente de Supabase apropiado
     const client = useAdminClient ? supabaseAdmin : supabase;
     console.log('📡 Cliente Supabase seleccionado:', useAdminClient ? 'ADMIN (bypassa RLS)' : 'NORMAL (con RLS)');
     
     // 🔒 VERIFICACIÓN ATÓMICA DE DUPLICADOS CON UPSERT
-    if (stripePaymentIntentId) {
-      console.log('🔍 Verificando duplicados por stripe_payment_intent_id:', stripePaymentIntentId);
+    if (cleanPaymentIntentId) {
+      console.log('🔍 Verificando duplicados por stripe_payment_intent_id:', cleanPaymentIntentId);
       
       try {
         // USAR TRANSACCIÓN ATÓMICA: INSERT con ON CONFLICT para evitar race conditions
@@ -36,7 +57,7 @@ export async function createSale(
         const { data: existingSale, error: checkError } = await client
           .from('sales')
           .select('id, stripe_payment_intent_id, ticket_id, created_at')
-          .eq('stripe_payment_intent_id', stripePaymentIntentId)
+          .eq('stripe_payment_intent_id', cleanPaymentIntentId)
           .limit(1);
         
         if (checkError) {
@@ -106,11 +127,11 @@ export async function createSale(
       items: items,    // JSONB array con los productos (campo adicional que tienes)
       total: total,
       subtotal: total, // Agregamos subtotal que es requerido en tu esquema
-      payment_method: stripePaymentIntentId ? 'stripe' : 'cash',
+      payment_method: cleanPaymentIntentId ? 'stripe' : 'cash',
       payment_status: 'completed',
       status: 'completed',
       client_id: clientId || null,
-      stripe_payment_intent_id: stripePaymentIntentId || null,
+      stripe_payment_intent_id: cleanPaymentIntentId || null,
       metadata: metadata || null
     };
     
@@ -153,12 +174,12 @@ export async function createSale(
       console.error('- Hint:', error.hint || 'Sin hint');
       
       // Si es un error de duplicado, intentar recuperar la venta existente
-      if (error.code === '23505' && stripePaymentIntentId) {
+      if (error.code === '23505' && cleanPaymentIntentId) {
         console.log('🔄 Error de duplicado detectado, recuperando venta existente...');
         const { data: existingSale } = await client
           .from('sales')
           .select('*')
-          .eq('stripe_payment_intent_id', stripePaymentIntentId)
+          .eq('stripe_payment_intent_id', cleanPaymentIntentId)
           .limit(1);
           
         if (existingSale && existingSale.length > 0) {
@@ -236,14 +257,14 @@ export async function createSale(
     console.log('Venta creada exitosamente:', data);
     
     // 🔍 VERIFICACIÓN POST-INSERT: Detectar duplicados creados concurrentemente
-    if (stripePaymentIntentId && data && data.length > 0) {
+    if (cleanPaymentIntentId && data && data.length > 0) {
       console.log('🔍 POST-INSERT: Verificando si se crearon duplicados concurrentemente...');
       
       try {
         const { data: allSalesWithSamePayment, error: duplicateCheckError } = await client
           .from('sales')
           .select('id, created_at, stripe_payment_intent_id')
-          .eq('stripe_payment_intent_id', stripePaymentIntentId)
+          .eq('stripe_payment_intent_id', cleanPaymentIntentId)
           .order('created_at', { ascending: true });
           
         if (!duplicateCheckError && allSalesWithSamePayment && allSalesWithSamePayment.length > 1) {

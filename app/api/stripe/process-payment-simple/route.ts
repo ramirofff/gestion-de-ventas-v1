@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '../../../../lib/stripeConnect';
 import { createSale } from '../../../../lib/sales';
+import { supabase } from '../../../../lib/supabaseClient';
 
 export async function POST(request: NextRequest) {
   console.log('🎯 API Simple: Procesamiento de pago simplificado iniciado');
@@ -17,6 +18,28 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('🔍 Obteniendo detalles de la sesión:', sessionId);
+
+    // VERIFICAR DUPLICADOS: Comprobar si ya existe una venta con este sessionId
+    const { data: existingSale, error: duplicateError } = await supabase
+      .from('sales')
+      .select('id, ticket_id')
+      .eq('ticket_id', sessionId)
+      .eq('user_id', userId)
+      .single();
+
+    if (existingSale && !duplicateError) {
+      console.log('⚠️ Venta ya existe, evitando duplicado:', existingSale);
+      return NextResponse.json({
+        success: true,
+        message: 'Venta ya procesada anteriormente',
+        saleData: existingSale,
+        duplicate: true
+      });
+    }
+
+    if (duplicateError && duplicateError.code !== 'PGRST116') { // PGRST116 = no rows found
+      console.warn('⚠️ Error verificando duplicados (continuando):', duplicateError);
+    }
 
     // Obtener sesión de Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
@@ -64,13 +87,29 @@ export async function POST(request: NextRequest) {
       userId 
     });
 
+    // Extraer el payment_intent_id correctamente
+    let paymentIntentId: string | undefined = undefined;
+    if (session.payment_intent) {
+      if (typeof session.payment_intent === 'string') {
+        paymentIntentId = session.payment_intent;
+      } else if (session.payment_intent.id) {
+        paymentIntentId = session.payment_intent.id;
+      }
+    }
+
+    console.log('🔍 Payment Intent procesado:', {
+      original: session.payment_intent,
+      extracted: paymentIntentId,
+      type: typeof session.payment_intent
+    });
+
     // Crear venta en la base de datos
     const saleResult = await createSale(
       stripeItems,
       totalFromStripe,
       userId,
       undefined, // clientId
-      session.payment_intent as string,
+      paymentIntentId,
       {
         stripe_session_id: sessionId,
         customer_email: session.customer_email,

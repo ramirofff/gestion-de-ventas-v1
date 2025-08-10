@@ -81,20 +81,20 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
           // Marcar como procesado
           setProcessedPayments(prev => new Set(prev).add(event.data.sessionId));
           
-          if (event.data.source === 'qr_payment' && event.data.showTicket) {
-            // Para pagos QR, mostrar el ticket directamente
-            console.log('🎫 Mostrando ticket para pago QR:', event.data.sessionId);
-            handleStripePaymentSuccessWithTicket(event.data.sessionId);
-          } else {
-            // Para otros pagos, procesar normalmente
-            handleStripePaymentSuccessWithTicket(event.data.sessionId);
-          }
+          // SIEMPRE usar la función simple que solo abre ticket y procesa en background
+          console.log('🎫 Mostrando ticket para pago:', event.data.sessionId);
+          handleStripePaymentSuccessWithTicket(event.data.sessionId);
         }
       } else if (event.data.type === 'TICKET_CLOSED') {
         console.log('🔄 Ticket cerrado - Refrescando página:', event.data);
         // Actualizar el estado para refrescar la interfaz
         setView('home');
         setSalesRefreshTrigger(prev => prev + 1);
+        
+        // IMPORTANTE: Refrescar productos también
+        console.log('🔄 Refrescando productos después de cerrar ticket...');
+        fetchProducts();
+        
         console.log('✅ Página refrescada después de cerrar ticket');
       } else if (event.data.type === 'PAYMENT_COMPLETED_FROM_QR') {
         console.log('📱 Pago QR completado desde dispositivo externo:', event.data);
@@ -345,7 +345,7 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
   const [editError, setEditError] = useState('');
   const [editLoading, setEditLoading] = useState(false);
   const [editSuccess, setEditSuccess] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
 function openEditProduct(product: Product) {
     setEditProduct(product);
@@ -418,12 +418,33 @@ function openEditProduct(product: Product) {
   // Función para recargar productos manualmente
   const handleManualReload = async () => {
     console.log('🔄 Recarga manual solicitada por usuario');
+    setToast({ type: 'success', message: 'Recargando página...' });
+    
     try {
+      // Resetear estados PERO NO PONER isInitialLoad en true para evitar pantalla de carga infinita
+      setView('home');
+      
+      // Recargar productos
+      console.log('🔄 Recargando productos...');
       await fetchProducts();
-      setIsInitialLoad(false); // Salir de la pantalla de carga
+      
+      // Recargar categorías si es necesario
+      setSelectedCategory('');
+      setSearchTerm('');
+      
+      // Refrescar historial de ventas
+      setSalesRefreshTrigger(prev => prev + 1);
+      
+      // Limpiar carrito si tiene contenido
+      if (cart.length > 0) {
+        clearCart();
+      }
+      
+      setToast({ type: 'success', message: '✅ Página recargada exitosamente' });
+      console.log('✅ Recarga manual completada');
     } catch (error) {
       console.error('❌ Error en recarga manual:', error);
-      setToast({ type: 'error', message: 'Error al recargar productos. Intenta de nuevo.' });
+      setToast({ type: 'error', message: 'Error al recargar. Intenta de nuevo.' });
     }
   };
 const [showVerificationSuccess, setShowVerificationSuccess] = useState(false);
@@ -478,17 +499,19 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
         
         // PASO 1: Cargar desde Supabase si hay usuario autenticado
         if (user) {
+          console.log('🔎 Consultando ventas en Supabase para user_id:', user.id);
           const { data, error } = await supabase
             .from('sales')
-            .select('id, total, products, items, subtotal, created_at, ticket_id')
+            .select('id, total, products, items, subtotal, created_at, ticket_id, user_id')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
-            
+
           if (!error && data) {
-            console.log('📊 Ventas cargadas desde Supabase:', data.length);
+            // Mostrar los user_id de las ventas para depuración
+            console.log('📊 Ventas cargadas desde Supabase:', data.length, data.map(s => s.user_id));
             allSales = data.map((sale) => ({
               id: sale.id,
-              user_id: user.id,
+              user_id: sale.user_id,
               products: sale.products ?? [],
               items: sale.items ?? sale.products ?? [],
               total: sale.total ?? 0,
@@ -505,18 +528,20 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
         // PASO 2: Cargar también desde localStorage (como respaldo y datos adicionales)
         try {
           const localSales = JSON.parse(localStorage.getItem('sales') || '[]');
-          console.log('💾 Ventas cargadas desde localStorage:', localSales.length);
-          
+          // Filtrar solo ventas del usuario autenticado
+          const localSalesForUser = user ? localSales.filter((sale: any) => sale.user_id === user.id) : [];
+          console.log('💾 Ventas cargadas desde localStorage para este usuario:', localSalesForUser.length);
+
           // Agregar ventas de localStorage que no estén ya en Supabase
           const supabaseIds = allSales.map(sale => sale.id);
-          const localOnlySales = localSales
+          const localOnlySales = localSalesForUser
             .filter((localSale: any) => !supabaseIds.includes(localSale.id))
             .map((localSale: any) => ({
               ...localSale,
               source: 'localStorage'
             }));
-          
-          console.log('💾 Ventas únicas de localStorage:', localOnlySales.length);
+
+          console.log('💾 Ventas únicas de localStorage para este usuario:', localOnlySales.length);
           allSales = [...allSales, ...localOnlySales];
         } catch (error) {
           console.warn('⚠️ Error leyendo localStorage:', error);
@@ -641,8 +666,12 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       // Mostrar mensaje de éxito
       setToast({ type: 'success', message: '¡Pago procesado exitosamente! Ticket abierto en nueva ventana.' });
       
-      // Refrescar historial de ventas
+      // Refrescar historial de ventas y productos
       setSalesRefreshTrigger(prev => prev + 1);
+      
+      // IMPORTANTE: Refrescar productos también
+      console.log('🔄 Refrescando productos después de completar pago...');
+      fetchProducts();
       
       // También procesar la venta en segundo plano para guardarla en BD
       try {
@@ -665,18 +694,14 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
           // Refrescar historial adicional
           setTimeout(() => {
             setSalesRefreshTrigger(prev => prev + 1);
+            fetchProducts(); // Refrescar productos de nuevo por si acaso
           }, 1000);
         } else {
           console.warn('⚠️ Problema procesando venta en segundo plano:', simpleResult.error);
         }
       } catch (error) {
         console.warn('⚠️ Error procesando venta en segundo plano (ticket ya mostrado):', error);
-        // Fallback al método original
-        try {
-          await handleStripePaymentSuccess(sessionId);
-        } catch (fallbackError) {
-          console.error('❌ También falló el método de respaldo:', fallbackError);
-        }
+        // No hacer fallback para evitar duplicados - el ticket ya se mostró
       }
       
     } catch (error) {
@@ -1090,7 +1115,7 @@ const [ticket, setTicket] = useState<{
           <h1 className={`text-3xl font-bold text-yellow-400 flex items-center gap-3`}>
             <Boxes className="w-8 h-8 text-green-400" /> Administrar productos
           </h1>
-          <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
+          <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>🏠 Volver al inicio</button>
         </div>
         <div className={`mt-4 sm:mt-8 ${cardBg} ${cardShadow} rounded-2xl p-2 sm:p-8 border`}>
           <AdminPanel />
@@ -1105,7 +1130,7 @@ const [ticket, setTicket] = useState<{
           <h1 className={`text-3xl font-bold text-blue-400 flex items-center gap-3`}>
             <ListOrdered className="w-8 h-8 text-blue-400" /> Historial de ventas
           </h1>
-          <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>Volver al inicio</button>
+          <button onClick={() => setView('home')} className={`${btnBase} ${btnBack}`}>🏠 Volver al inicio</button>
         </div>
         <div className={`mt-4 sm:mt-8`}>
           <SalesHistory 
@@ -2028,6 +2053,14 @@ const [ticket, setTicket] = useState<{
               aria-label="Toggle light/dark mode"
             >
               {theme === 'dark' ? '🌙 Modo oscuro' : '☀️ Modo claro'}
+            </button>
+            <button
+              onClick={handleManualReload}
+              className={`${btnBase} ${theme === 'dark' ? 'bg-zinc-700 hover:bg-zinc-600 text-zinc-200 border-zinc-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300'} transition-transform hover:scale-105`}
+              aria-label="Recargar página"
+              title="Recargar productos y refrescar página"
+            >
+              🔄 Recargar
             </button>
           </div>
         )}
