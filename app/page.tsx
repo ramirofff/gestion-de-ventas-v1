@@ -27,7 +27,7 @@ import { StripeConfigManager } from '../lib/stripe-config';
 import { User } from '@supabase/supabase-js';
 import { useTheme } from '../contexts/ThemeContext';
 import { Modal } from '../components/Modal';
-import { TicketPreview } from '../components/TicketPreview';
+import { PaymentNotifications } from '../components/PaymentNotifications';
 
 
 // ...existing code...
@@ -97,6 +97,15 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
   type LocalUser = { id: string; email?: string };
   const [user, setUser] = useState<LocalUser | null>(null);
   
+  // Estado para Stripe Connect
+  const [stripeConnectStatus, setStripeConnectStatus] = useState<{
+    connected: boolean;
+    loading: boolean;
+    account?: any;
+    stats?: any;
+    error?: string;
+  }>({ connected: false, loading: true });
+  
   // Obtener usuario autenticado al cargar
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -111,6 +120,94 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Verificar estado de Stripe Connect cuando el usuario cambie
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | undefined;
+    
+    const checkStripeConnectStatus = async () => {
+      if (!user) {
+        setStripeConnectStatus({ connected: false, loading: false });
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/stripe-connect/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.connected) {
+          setStripeConnectStatus({
+            connected: true,
+            loading: false,
+            account: data.account,
+            stats: data.stats,
+          });
+        } else if (data.error === 'database_not_setup') {
+          console.log('🚨 Base de datos no configurada - Deteniendo verificaciones');
+          setStripeConnectStatus({ 
+            connected: false, 
+            loading: false,
+            error: 'Database not setup' 
+          });
+          return; // No continuar verificando si no hay tablas
+        } else {
+          setStripeConnectStatus({ connected: false, loading: false });
+        }
+      } catch (error) {
+        console.error('Error verificando Stripe Connect:', error);
+        setStripeConnectStatus({ connected: false, loading: false });
+      }
+    };
+
+    // Verificar una sola vez al iniciar
+    checkStripeConnectStatus();
+
+    // Limpiar timeout al desmontar
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [user]);
+
+  // Refrescar estado cuando la página se vuelva visible (cuando regrese de otra página)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user) {
+        console.log('🔄 Página visible - Refrescando estado de Stripe Connect...');
+        // Re-verificar estado de Stripe Connect
+        const checkStripeConnectStatus = async () => {
+          try {
+            const response = await fetch('/api/stripe-connect/status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user.id })
+            });
+            const data = await response.json();
+
+            if (response.ok && data.connected) {
+              setStripeConnectStatus({
+                connected: true,
+                loading: false,
+                account: data.account,
+                stats: data.stats,
+              });
+            } else {
+              setStripeConnectStatus({ connected: false, loading: false });
+            }
+          } catch (error) {
+            console.error('Error refrescando Stripe Connect:', error);
+          }
+        };
+        checkStripeConnectStatus();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user]);
   // --- Estado y lógica para edición de producto ---
   type EditProductType = { id: string; name: string; price: number; category: string } | null;
   const [editProduct, setEditProduct] = useState<EditProductType>(null);
@@ -550,6 +647,49 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
       }
       
       console.log('✅ Venta creada exitosamente en base de datos y localStorage');
+      
+      // **NUEVO: Procesar comisión para cuentas conectadas**
+      try {
+        console.log('💰 Procesando comisión para venta completada...');
+        const commissionResponse = await fetch('/api/stripe-connect/process-commission', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: currentUser.id,
+            stripePaymentIntentId: session_details.payment_intent_id,
+            saleAmount: totalFromStripe,
+            saleItems: stripeItems,
+            customerEmail: session_details.customer_email
+          })
+        });
+
+        const commissionResult = await commissionResponse.json();
+        
+        if (commissionResult.processed) {
+          if (commissionResult.commission) {
+            console.log('✅ Comisión procesada:', {
+              amount: commissionResult.commission.amount,
+              businessName: commissionResult.commission.businessName,
+              rate: `${(commissionResult.commission.rate * 100)}%`
+            });
+            
+            // Mostrar información de comisión al usuario
+            if (!commissionResult.isDuplicate) {
+              setToast({ 
+                type: 'success', 
+                message: `¡Comisión procesada! $${commissionResult.commission.amount} para ${commissionResult.commission.businessName}` 
+              });
+            }
+          }
+        } else {
+          console.log('ℹ️ No hay cuenta conectada, procesando sin comisión');
+        }
+      } catch (commissionError) {
+        console.error('⚠️ Error procesando comisión (continuando):', commissionError);
+        // No interrumpir el flujo principal por errores de comisión
+      }
       
       // Refrescar historial de ventas INMEDIATAMENTE
       console.log('🔄 Actualizando sales refresh trigger...');
@@ -1642,6 +1782,56 @@ const [ticket, setTicket] = useState<{
             <button onClick={() => setView('help')} className={`${btnBase} ${btnHelp} transition-transform hover:scale-105`}>
               <HelpCircle className="w-6 h-6 text-blue-400" /> Soporte / Ayuda
             </button>
+            
+            {/* Stripe Connect Status */}
+            {stripeConnectStatus.loading ? (
+              <div className={`${btnBase} bg-gray-500 cursor-not-allowed opacity-75`}>
+                <CreditCard className="w-6 h-6 animate-spin" /> ⏳ Verificando Stripe...
+              </div>
+            ) : stripeConnectStatus.connected ? (
+              <div className="flex flex-col space-y-2">
+                <div className={`${btnBase} bg-gradient-to-r from-green-600 to-emerald-600 text-white border-green-600`}>
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center space-x-2">
+                      <CreditCard className="w-6 h-6" />
+                      <div className="text-left">
+                        <div className="font-bold">✅ Stripe Conectado</div>
+                        <div className="text-xs opacity-90">
+                          {stripeConnectStatus.account?.businessName}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => {
+                          console.log('🔄 Refrescando estado manualmente...');
+                          window.location.reload();
+                        }}
+                        className="text-xs bg-green-100 hover:bg-green-200 px-2 py-1 rounded text-green-700 opacity-75 hover:opacity-100"
+                        title="Refrescar estado"
+                      >
+                        🔄
+                      </button>
+                      <div className="text-right text-xs">
+                        <div>💰 ${stripeConnectStatus.stats?.totalCommission || '0.00'}</div>
+                        <div>📊 {stripeConnectStatus.stats?.totalSales || 0} ventas</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col space-y-2">
+                <a 
+                  href="/stripe-connect-manual" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className={`${btnBase} bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-blue-600 transition-transform hover:scale-105`}
+                >
+                  <CreditCard className="w-6 h-6" /> � Configurar Cuenta Stripe
+                </a>
+              </div>
+            )}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className={`${btnBase} ${btnTheme} ml-4 transition-transform hover:scale-105`}
@@ -1897,7 +2087,11 @@ const [ticket, setTicket] = useState<{
             quantity: item.quantity,
             description: item.category || undefined
           }))}
-          onClose={() => setShowStripePayment(false)}
+          onClose={() => {
+            setShowStripePayment(false);
+            console.log('🔄 Cerrando modal de pago, refrescando productos...');
+            fetchProducts();
+          }}
           onSuccess={handleStripePaymentSuccess}
           selectedClient={selectedClient}
         />
@@ -2097,6 +2291,9 @@ const [ticket, setTicket] = useState<{
           <div className="mb-32 text-6xl animate-bounce">🛒</div>
         </div>
       )}
+
+      {/* Notificaciones de pagos */}
+      <PaymentNotifications />
     </main>
   </>);
 }

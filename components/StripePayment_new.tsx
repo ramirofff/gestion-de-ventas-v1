@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { QRDisplay } from './QRDisplay';
 import { ClientAccount } from '../lib/client-accounts';
 import { supabase } from '../lib/supabaseClient';
-import UserSettingsManager from '../lib/userSettings';
 import { User } from '@supabase/supabase-js';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -27,11 +26,12 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const [loading, setLoading] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showQR, setShowQR] = useState(false);
+  const [showQR, setShowQR] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [isPolling, setIsPolling] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('selection');
   const { theme, getThemeClass } = useTheme();
 
   // Obtener usuario autenticado
@@ -66,7 +66,6 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   // Listener para mensajes de la ventana de pago
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // Verificar origen por seguridad
       if (event.origin !== window.location.origin) {
         return;
       }
@@ -83,7 +82,6 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     };
 
     window.addEventListener('message', handleMessage);
-
     return () => {
       window.removeEventListener('message', handleMessage);
     };
@@ -94,23 +92,26 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     try {
       console.log('🔍 Verificando pago con endpoint del servidor...');
       
-      // Usar endpoint de verificación del servidor
       const verifyResponse = await fetch('/api/stripe/verify-payment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
+        body: JSON.stringify({ 
           session_id: sessionId,
-          user_id: currentUser?.id
-        })
+          user_id: currentUser?.id 
+        }),
       });
-      
+
+      if (!verifyResponse.ok) {
+        console.error('❌ Error en respuesta del servidor:', verifyResponse.status);
+        return false;
+      }
+
       const verifyData = await verifyResponse.json();
-      console.log('📊 Respuesta de verificación del servidor:', verifyData);
       
-      if (verifyResponse.ok && verifyData.success && verifyData.payment_verified) {
-        // Pago confirmado por Stripe, notificar éxito
+      if (verifyData.success && verifyData.payment_verified) {
+        console.log('✅ Pago verificado exitosamente');
         setPaymentStatus('completed');
         setIsPolling(false);
         if (onSuccess) {
@@ -127,6 +128,17 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     }
   };
 
+  // Función para iniciar el polling de pagos
+  const startPaymentPolling = (sessionId: string) => {
+    if (isPolling) {
+      console.log('⚠️ Polling ya está activo');
+      return;
+    }
+    
+    console.log('🔄 Iniciando polling para sesión:', sessionId);
+    setIsPolling(true);
+  };
+
   // Polling para verificar el estado del pago cada 3 segundos
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -140,7 +152,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
           setIsPolling(false);
           if (interval) clearInterval(interval);
         }
-      }, 3000); // Cada 3 segundos
+      }, 3000);
     }
 
     return () => {
@@ -149,52 +161,62 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
         clearInterval(interval);
       }
     };
-  }, [isPolling, sessionId, currentUser]);
+  }, [isPolling, sessionId, currentUser, onSuccess]);
 
-  // Limpiar polling cuando el componente se desmonta
-  useEffect(() => {
-    return () => {
-      if (isPolling) {
-        console.log('🧹 Componente desmontado, deteniendo polling');
-        setIsPolling(false);
-      }
-    };
-  }, [isPolling]);
-
+  // Función para crear el enlace de pago
   const createPaymentLink = async () => {
     if (!currentUser) {
       setError('Debes iniciar sesión para realizar pagos');
       return;
     }
 
+    setLoading(true);
+    setError(null);
+
     try {
-      setLoading(true);
-      setError(null);
+      console.log('🔍 StripePayment: Iniciando creación de enlace...');
       
-      // Los datos del carrito se guardarán automáticamente en el backend cuando se cree la sesión
       const paymentData = {
         amount: amount,
         originalAmount: originalAmount,
         discountAmount: discountAmount,
         currency: 'usd',
         description: `Venta - ${items.length} producto(s)`,
-        items: items,
-        customer_email: currentUser.email, // 🎯 Email del usuario autenticado
-        user_id: currentUser.id, // 🎯 ID del usuario autenticado
-      };
-      
-      console.log('📤 Enviando datos de pago:', {
-        ...paymentData,
-        items: `${items.length} items`,
+        customer_email: selectedClient?.email,
         user_email: currentUser.email
-      });
+      };
 
-      const response = await fetch('/api/stripe/payment', {
+      const statusResponse = await fetch('/api/stripe-connect/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id })
+      });
+      
+      const statusData = await statusResponse.json();
+      
+      if (!statusData.connected) {
+        throw new Error('No tienes una cuenta Stripe Connect configurada');
+      }
+
+      console.log('📤 Procesando pago con Stripe Connect:', statusData.account.id);
+
+      const response = await fetch('/api/stripe-connect/create-payment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(paymentData),
+        body: JSON.stringify({
+          userId: currentUser.id,
+          userEmail: currentUser.email,
+          connectedAccountId: statusData.account.id,
+          amount: paymentData.amount,
+          productName: paymentData.description,
+          customerEmail: paymentData.customer_email,
+          commissionRate: 0.05,
+          currency: paymentData.currency || 'usd',
+          isQRPayment: showQR,
+          cartData: items // Agregar los datos del carrito
+        }),
       });
 
       const data = await response.json();
@@ -204,8 +226,24 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
       }
 
       console.log('✅ Enlace de pago creado exitosamente');
+      console.log('📦 Datos recibidos:', data);
+      console.log('🔗 Payment URL:', data.payment_url);
+      
       setPaymentUrl(data.payment_url);
-      setSessionId(data.session_id); // Guardar session ID para verificar estado
+      setSessionId(data.session_id);
+
+      // Solo abrir automáticamente si es enlace directo (no QR)
+      if (data.payment_url && !showQR) {
+        console.log('🚀 Abriendo ventana de Stripe Checkout automáticamente (enlace directo)...');
+        window.open(data.payment_url, '_blank');
+      }
+      
+      // Iniciar polling automáticamente para ambos casos
+      if (data.session_id && !isPolling) {
+        console.log('🚀 Iniciando polling automáticamente después de crear enlace...');
+        setIsPolling(true);
+        startPaymentPolling(data.session_id);
+      }
 
     } catch (err: unknown) {
       console.error('❌ Error creating payment link:', err);
@@ -215,12 +253,17 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     }
   };
 
+  // Función para manejar la selección de método de pago
+  const handlePaymentMethodSelection = (method: 'qr' | 'link') => {
+    setShowQR(method === 'qr');
+    setPaymentMode('processing');
+    createPaymentLink();
+  };
+
   const handlePaymentClick = () => {
     if (paymentUrl) {
-      // Abrir Stripe Checkout en una nueva pestaña
       window.open(paymentUrl, '_blank');
       
-      // Iniciar polling para verificar el pago
       if (sessionId && !isPolling) {
         console.log('🚀 Iniciando polling después de abrir Stripe...');
         setIsPolling(true);
@@ -276,15 +319,15 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
             light: 'bg-gray-50 border-gray-200'
           })}`}>
             <h3 className={`text-lg font-semibold mb-3 ${getThemeClass({dark: 'text-white', light: 'text-gray-900'})}`}>
-              📋 Resumen de compra:
+              🛒 Resumen de compra
             </h3>
             <div className="space-y-2">
               {items.map((item, index) => (
-                <div key={index} className="flex justify-between items-center">
-                  <span className={`text-sm ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
-                    {item.quantity}x {item.name}
+                <div key={index} className="flex justify-between text-sm">
+                  <span className={`flex-1 ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
+                    {item.name} x{item.quantity}
                   </span>
-                  <span className={`font-bold ${getThemeClass({dark: 'text-white', light: 'text-gray-900'})}`}>
+                  <span className={getThemeClass({dark: 'text-white', light: 'text-gray-900'})}>
                     ${(item.price * item.quantity).toLocaleString('en-US')}
                   </span>
                 </div>
@@ -317,104 +360,162 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
             </div>
           )}
 
-          {/* Enlaces de pago o botón para crear */}
-          {paymentUrl ? (
-            <div className={`rounded-xl p-4 mb-4 border ${getThemeClass({
-              dark: 'bg-green-900/20 border-green-700',
-              light: 'bg-green-50 border-green-200'
+          {/* Mostrar selección de método de pago o enlace generado */}
+          {paymentMode === 'selection' ? (
+            // MODO SELECCIÓN: Mostrar opciones de pago
+            <div className={`rounded-xl p-6 mb-4 border ${getThemeClass({
+              dark: 'bg-blue-900/20 border-blue-700',
+              light: 'bg-blue-50 border-blue-200'
             })}`}>
-              <h3 className={`text-lg font-semibold mb-2 ${getThemeClass({dark: 'text-green-300', light: 'text-green-700'})}`}>
-                ✅ Enlace de pago generado
+              <h3 className={`text-lg font-semibold mb-3 text-center ${getThemeClass({dark: 'text-blue-300', light: 'text-blue-700'})}`}>
+                💳 Elige tu método de pago
               </h3>
-              <p className={`text-sm mb-4 ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
-                Elige cómo quieres proceder con el pago:
+              <p className={`text-sm mb-6 text-center ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
+                Selecciona cómo prefieres realizar el pago
               </p>
 
-              {/* Botones para alternar entre Link y QR */}
-              <div className="flex gap-2 mb-4">
+              {/* Botones de selección */}
+              <div className="space-y-3">
                 <button
-                  onClick={() => setShowQR(false)}
-                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                    !showQR 
-                      ? 'bg-blue-600 text-white' 
+                  onClick={() => handlePaymentMethodSelection('qr')}
+                  disabled={loading || !currentUser}
+                  className={`w-full p-4 rounded-xl border-2 transition-all duration-200 ${
+                    (loading || !currentUser)
+                      ? 'opacity-50 cursor-not-allowed border-gray-300'
                       : getThemeClass({
-                          dark: 'bg-zinc-700 text-gray-300 hover:bg-zinc-600',
-                          light: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          dark: 'border-blue-600 bg-blue-900/10 hover:bg-blue-900/20 text-blue-300 hover:border-blue-500',
+                          light: 'border-blue-600 bg-blue-50 hover:bg-blue-100 text-blue-700 hover:border-blue-500'
                         })
                   }`}
                 >
-                  🔗 Link de Pago
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="text-2xl">📱</span>
+                    <div className="text-left">
+                      <div className="font-semibold">Código QR</div>
+                      <div className="text-sm opacity-75">Escanea con tu celular</div>
+                    </div>
+                  </div>
                 </button>
+
                 <button
-                  onClick={() => setShowQR(true)}
-                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                    showQR 
-                      ? 'bg-blue-600 text-white' 
+                  onClick={() => handlePaymentMethodSelection('link')}
+                  disabled={loading || !currentUser}
+                  className={`w-full p-4 rounded-xl border-2 transition-all duration-200 ${
+                    (loading || !currentUser)
+                      ? 'opacity-50 cursor-not-allowed border-gray-300'
                       : getThemeClass({
-                          dark: 'bg-zinc-700 text-gray-300 hover:bg-zinc-600',
-                          light: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          dark: 'border-green-600 bg-green-900/10 hover:bg-green-900/20 text-green-300 hover:border-green-500',
+                          light: 'border-green-600 bg-green-50 hover:bg-green-100 text-green-700 hover:border-green-500'
                         })
                   }`}
                 >
-                  📱 Código QR
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="text-2xl">🔗</span>
+                    <div className="text-left">
+                      <div className="font-semibold">Enlace Directo</div>
+                      <div className="text-sm opacity-75">Abre Stripe en nueva pestaña</div>
+                    </div>
+                  </div>
                 </button>
               </div>
 
-              {/* Mostrar QR o Link según selección */}
-              {showQR ? (
-                <div className="text-center">
-                  <div className={`inline-block p-4 rounded-xl ${getThemeClass({dark: 'bg-white', light: 'bg-white'})}`}>
-                    <QRDisplay 
-                      value={paymentUrl}
-                      size={200}
-                    />
-                  </div>
-                  <p className={`mt-3 text-sm ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
-                    📱 Escanea el código QR para pagar con tarjeta internacional
-                  </p>
-                  
-                  {/* Estado del polling */}
-                  {isPolling && (
-                    <div className="flex items-center justify-center gap-2 mt-4">
-                      <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-                      <span className={`text-sm ${getThemeClass({dark: 'text-blue-300', light: 'text-blue-600'})}`}>
-                        Esperando el pago...
-                      </span>
-                    </div>
-                  )}
-                  
-                  {paymentStatus === 'completed' && (
-                    <div className="text-green-500 text-sm font-bold mt-4">
-                      ✅ ¡Pago completado exitosamente!
-                    </div>
-                  )}
+              {loading && (
+                <div className="flex items-center justify-center gap-2 mt-4">
+                  <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                  <span className={`text-sm ${getThemeClass({dark: 'text-blue-300', light: 'text-blue-600'})}`}>
+                    Generando enlace de pago...
+                  </span>
                 </div>
-              ) : (
-                <button
-                  onClick={handlePaymentClick}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-colors"
-                >
-                  🚀 Ir a Stripe Checkout
-                </button>
               )}
             </div>
           ) : (
-            <button
-              onClick={handlePaymentClick}
-              disabled={loading || !currentUser}
-              className={`w-full font-bold py-4 px-6 rounded-xl transition-colors mb-4 ${
-                (loading || !currentUser) 
-                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              {loading 
-                ? '⏳ Generando enlace...' 
-                : !currentUser
-                  ? '🔒 Inicia sesión para pagar'
-                  : '💳 Generar enlace de pago'
-              }
-            </button>
+            // MODO PROCESAMIENTO: Mostrar QR o enlace generado
+            paymentUrl && (
+              <div className={`rounded-xl p-4 mb-4 border ${getThemeClass({
+                dark: 'bg-green-900/20 border-green-700',
+                light: 'bg-green-50 border-green-200'
+              })}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className={`text-lg font-semibold ${getThemeClass({dark: 'text-green-300', light: 'text-green-700'})}`}>
+                    ✅ {showQR ? 'Código QR listo' : 'Enlace de pago listo'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setPaymentMode('selection');
+                      setPaymentUrl(null);
+                      setSessionId(null);
+                      setIsPolling(false);
+                      setError(null);
+                    }}
+                    className={`text-sm px-3 py-1 rounded transition-colors ${getThemeClass({
+                      dark: 'bg-zinc-700 text-gray-300 hover:bg-zinc-600',
+                      light: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    })}`}
+                  >
+                    ← Cambiar método
+                  </button>
+                </div>
+
+                {/* Mostrar QR o Link según selección */}
+                {showQR ? (
+                  <div className="text-center">
+                    <div className={`inline-block p-4 rounded-xl ${getThemeClass({dark: 'bg-white', light: 'bg-white'})}`}>
+                      <QRDisplay 
+                        value={paymentUrl}
+                        size={200}
+                      />
+                    </div>
+                    <p className={`mt-3 text-sm ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
+                      📱 Escanea el código QR para pagar con tarjeta internacional
+                    </p>
+                    
+                    {/* Estado del polling */}
+                    {isPolling && (
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                        <span className={`text-sm ${getThemeClass({dark: 'text-blue-300', light: 'text-blue-600'})}`}>
+                          Esperando el pago...
+                        </span>
+                      </div>
+                    )}
+                    
+                    {paymentStatus === 'completed' && (
+                      <div className="text-green-500 text-sm font-bold mt-4">
+                        ✅ ¡Pago completado exitosamente!
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <p className={`mb-4 text-sm ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
+                      El enlace se abrió en una nueva pestaña. Si no se abrió automáticamente, haz clic en el botón:
+                    </p>
+                    <button
+                      onClick={handlePaymentClick}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-colors"
+                    >
+                      🚀 Abrir Stripe Checkout
+                    </button>
+                    
+                    {/* Estado del polling */}
+                    {isPolling && (
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                        <span className={`text-sm ${getThemeClass({dark: 'text-blue-300', light: 'text-blue-600'})}`}>
+                          Esperando el pago...
+                        </span>
+                      </div>
+                    )}
+                    
+                    {paymentStatus === 'completed' && (
+                      <div className="text-green-500 text-sm font-bold mt-4">
+                        ✅ ¡Pago completado exitosamente!
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
           )}
 
           {/* Información adicional */}

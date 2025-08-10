@@ -49,7 +49,7 @@ export default function PaymentSuccessPage() {
         const controller = new AbortController();
         const fetchTimeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos
         
-        const response = await fetch('/api/stripe/payment/status', {
+        const response = await fetch('/api/stripe/verify-payment', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -69,24 +69,29 @@ export default function PaymentSuccessPage() {
         const data = await response.json();
         
         if (!data.success) {
+          // Si el pago aún no está completado, seguir esperando
+          if (data.payment_status && data.payment_status !== 'paid') {
+            console.log('⏳ Pago aún no completado, reintentando...');
+            // Reintentar después de 2 segundos
+            setTimeout(() => processPaymentSuccess(), 2000);
+            return;
+          }
           throw new Error(data.error || data.message || 'Error al verificar el pago');
         }
 
-        const { session_details } = data;
-        
-        // Construir datos del ticket
+        // El pago está completado, construir datos del ticket
         const ticket: TicketData = {
           ticket_id: sessionId,
-          total: session_details.amount_total / 100,
-          subtotal: session_details.amount_subtotal / 100,
-          discount: Math.max(0, (session_details.amount_subtotal - session_details.amount_total) / 100),
-          items: session_details.line_items.map((item: any) => ({
-            name: item.description || 'Producto',
-            price: item.price.unit_amount / 100,
-            quantity: item.quantity,
-            original_price: item.price.unit_amount / 100
+          total: data.total,
+          subtotal: data.total, // Si no hay subtotal específico, usar total
+          discount: 0, // Calcular si es necesario
+          items: data.cart_data.map((item: any) => ({
+            name: item.name || 'Producto',
+            price: item.price || 0,
+            quantity: item.quantity || 1,
+            original_price: item.original_price || item.price || 0
           })),
-          customer_email: session_details.customer_email,
+          customer_email: data.customer_email,
           created_at: new Date().toISOString()
         };
 

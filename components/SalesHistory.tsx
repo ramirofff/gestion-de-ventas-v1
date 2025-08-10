@@ -433,143 +433,138 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
         )}
       </div>
 
-      {/* Modal mejorado para el ticket */}
+      {/* Modal del ticket profesional - estilo post-venta */}
       {showTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-75 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 relative transform transition-all max-h-screen overflow-y-auto">
-            {/* Botón cerrar mejorado */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 relative transform transition-all max-h-[90vh] overflow-y-auto">
+            {/* Botón cerrar */}
             <button
               onClick={() => setShowTicket(null)}
-              className="absolute top-4 right-4 bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 rounded-full w-8 h-8 flex items-center justify-center text-xl font-bold z-10 transition-colors"
+              className="absolute top-4 right-4 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white rounded-full w-8 h-8 flex items-center justify-center text-xl font-bold z-10 transition-colors"
             >
               ×
             </button>
             
-            {/* Ticket profesional con diseño mejorado */}
-            <div className="p-8">
-              {/* Header del negocio con mejor diseño */}
-              <div className="text-center mb-8 border-b pb-6">
-                <div className="mb-4">
-                  <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mx-auto mb-4 flex items-center justify-center">
-                    <span className="text-2xl text-white font-bold">🏪</span>
-                  </div>
-                </div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">{businessName}</h2>
-                <div className="text-sm text-gray-500 space-y-1">
-                  <div>Sistema de Gestión de Ventas</div>
-                  <div>📍 Av. Principal 123, Ciudad</div>
-                  <div>📞 (555) 123-4567</div>
-                  <div>🌐 www.minegocio.com</div>
-                </div>
+            {/* Header profesional */}
+            <div className="text-center p-6 bg-gradient-to-r from-blue-600 to-purple-600">
+              <div className="text-white mb-4">
+                <div className="text-4xl mb-2">🎉</div>
+                <h2 className="text-2xl font-bold">¡Venta Realizada!</h2>
+                <p className="text-blue-100 text-sm mt-2">Comprobante de compra</p>
               </div>
-              
-              {/* Info del ticket con mejor formato */}
-              <div className="text-center mb-8 bg-gray-50 rounded-xl p-6">
-                <h3 className="text-xl font-bold text-gray-900 mb-3 flex items-center justify-center gap-2">
-                  🧾 COMPROBANTE DE VENTA
-                </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">Ticket N°:</span>
-                    <div className="font-mono font-bold text-lg text-blue-600">
-                      {showTicket.ticket_id}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Fecha y Hora:</span>
-                    <div className="font-semibold">
-                      {showTicket.created_at ? new Date(showTicket.created_at).toLocaleDateString('es-AR') : 'N/A'}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {showTicket.created_at ? new Date(showTicket.created_at).toLocaleTimeString('es-AR') : 'N/A'}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="text-xs text-gray-500">Atendido por:</div>
-                  <div className="font-medium text-gray-700">Sistema POS v1.0</div>
-                </div>
+              <div className="inline-block bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 px-4 py-2 rounded-full text-sm font-medium">
+                ✅ Pago completado
               </div>
-              
-              {/* Productos con mejor diseño */}
-              <div className="mb-8">
-                <h4 className="font-bold text-gray-900 mb-4 pb-2 border-b-2 border-blue-200 flex items-center gap-2">
-                  🛍️ DETALLE DE PRODUCTOS
-                </h4>
-                <div className="space-y-3">
+            </div>
+
+            {/* Comprobante de Compra */}
+            <div className="bg-blue-600 text-white p-4 text-center">
+              <h3 className="text-xl font-bold">📄 Comprobante de Compra</h3>
+              <p className="text-blue-200 text-sm mt-1">
+                ID: {showTicket.ticket_id?.slice(-8) || 'N/A'}
+              </p>
+            </div>
+            
+            <div className="p-6">
+              {/* Detalles de la compra */}
+              <div className="space-y-4">
+                <div className="border-b border-gray-200 dark:border-gray-600 pb-4">
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                    📄 Detalles de la Compra
+                  </h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Fecha: {showTicket.created_at ? new Date(showTicket.created_at).toLocaleString('es-AR') : 'N/A'}
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Negocio: {businessName}
+                  </p>
+                </div>
+                
+                {/* Lista de productos */}
+                <div className="space-y-2">
+                  <h5 className="font-medium text-gray-900 dark:text-white">Productos:</h5>
                   {(showTicket.products || showTicket.items || []).map((item: any, index: number) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center">
-                      <div className="flex-1">
-                        <div className="font-semibold text-gray-900">{item.name || 'Producto'}</div>
-                        <div className="text-sm text-gray-600 mt-1">
-                          ${(item.price || 0).toFixed(2)} × {item.quantity || 1} unidad{(item.quantity || 1) > 1 ? 'es' : ''}
-                        </div>
+                    <div key={index} className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">{item.name || 'Producto'}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          Cantidad: {item.quantity || 1}
+                        </p>
                       </div>
                       <div className="text-right">
-                        <div className="text-lg font-bold text-gray-900">
+                        <p className="font-medium text-gray-900 dark:text-white">
                           ${((item.price || 0) * (item.quantity || 1)).toFixed(2)}
-                        </div>
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          ${(item.price || 0).toFixed(2)} c/u
+                        </p>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
-              
-              {/* Total con mejor formato */}
-              <div className="mb-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6">
-                <div className="flex justify-between items-center text-lg mb-2">
-                  <span className="text-gray-700">Subtotal:</span>
-                  <span className="font-semibold">${(showTicket.subtotal || showTicket.total || 0).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center text-lg mb-2">
-                  <span className="text-gray-700">Descuentos:</span>
-                  <span className="font-semibold">$0.00</span>
-                </div>
-                <div className="border-t-2 border-gray-200 pt-3 mt-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-2xl font-bold text-gray-900">TOTAL A PAGAR:</span>
-                    <span className="text-3xl font-bold text-green-600">
-                      ${(showTicket.total || 0).toFixed(2)}
-                    </span>
+                
+                {/* Totales */}
+                <div className="border-t border-gray-200 dark:border-gray-600 pt-4 space-y-2">
+                  {showTicket.subtotal && showTicket.subtotal !== showTicket.total && (
+                    <>
+                      <div className="flex justify-between items-center text-gray-700 dark:text-gray-300">
+                        <span>Subtotal:</span>
+                        <span>${(showTicket.subtotal || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-green-600 dark:text-green-400">
+                        <span>Descuento aplicado:</span>
+                        <span>-${((showTicket.subtotal || 0) - (showTicket.total || 0)).toFixed(2)}</span>
+                      </div>
+                      <hr className="border-gray-200 dark:border-gray-600" />
+                    </>
+                  )}
+                  <div className="flex justify-between items-center text-lg font-bold text-gray-900 dark:text-white">
+                    <span>Total:</span>
+                    <span>${(showTicket.total || 0).toFixed(2)}</span>
                   </div>
                 </div>
-              </div>
-              
-              {/* Método de pago */}
-              <div className="mb-8 text-center bg-blue-50 rounded-xl p-4">
-                <div className="text-sm text-gray-600 mb-1">Método de pago:</div>
-                <div className="text-lg font-bold text-blue-600 uppercase">
-                  {showTicket.payment_method === 'stripe' ? '💳 Pago con Tarjeta (Stripe)' : showTicket.payment_method || 'Efectivo'}
+
+                {/* Método de pago */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                  <div className="text-center">
+                    <p className="text-sm text-blue-600 dark:text-blue-400 mb-1">Método de pago:</p>
+                    <p className="font-bold text-blue-800 dark:text-blue-300">
+                      {showTicket.payment_method === 'stripe' ? '💳 Tarjeta (Stripe)' : 
+                       showTicket.payment_method === 'cash' ? '💰 Efectivo' : 
+                       showTicket.payment_method || '💳 Tarjeta'}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-sm text-green-600 mt-2 font-semibold">
-                  ✅ PAGO COMPLETADO
-                </div>
-              </div>
-              
-              {/* Footer mejorado */}
-              <div className="text-center text-xs text-gray-500 space-y-2 border-t pt-6">
-                <div className="text-lg mb-3">¡Gracias por su compra! 😊</div>
-                <div>Conserve este comprobante como garantía</div>
-                <div>Para consultas: info@minegocio.com</div>
-                <div className="mt-4 pt-3 border-t border-gray-200">
-                  <div className="font-medium text-gray-600">Powered by {businessName} - Sistema POS v1.0</div>
-                  <div className="text-gray-400 mt-1">© {new Date().getFullYear()} Todos los derechos reservados</div>
+
+                {/* Información adicional */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4">
+                  <h5 className="text-sm font-semibold mb-2 text-blue-700 dark:text-blue-300">
+                    🔒 Información del Sistema
+                  </h5>
+                  <ul className="text-xs space-y-1 text-blue-600 dark:text-blue-400">
+                    <li>• Transacción procesada de forma segura</li>
+                    <li>• Comprobante generado automáticamente</li>
+                    <li>• Información respaldada en el sistema</li>
+                    <li>• Conserve este comprobante como garantía</li>
+                  </ul>
                 </div>
               </div>
             </div>
             
-            {/* Botones de acción mejorados */}
-            <div className="px-8 pb-8 flex gap-3">
-              <button
-                onClick={() => window.print()}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2 shadow-lg"
-              >
-                🖨️ Imprimir Ticket
-              </button>
-              <button
-                onClick={() => {
-                  const ticketData = `
+            {/* Botones de acción */}
+            <div className="p-6 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => window.print()}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                >
+                  🖨️ Imprimir Comprobante
+                </button>
+                <button
+                  onClick={() => {
+                    const ticketData = `
 === ${businessName.toUpperCase()} ===
+COMPROBANTE DE VENTA
 TICKET: ${showTicket.ticket_id}
 FECHA: ${showTicket.created_at ? new Date(showTicket.created_at).toLocaleString('es-AR') : 'N/A'}
 
@@ -579,22 +574,30 @@ ${(showTicket.products || showTicket.items || []).map((item: any) =>
 ).join('\n')}
 
 TOTAL: $${(showTicket.total || 0).toFixed(2)}
-MÉTODO: ${showTicket.payment_method || 'N/A'}
+MÉTODO: ${showTicket.payment_method === 'stripe' ? 'Tarjeta (Stripe)' : showTicket.payment_method || 'Efectivo'}
 
 ¡Gracias por su compra!
-                  `.trim();
-                  
-                  navigator.clipboard.writeText(ticketData).then(() => {
-                    alert('✅ Información del ticket copiada al portapapeles');
-                  }).catch(() => {
-                    alert('❌ No se pudo copiar al portapapeles');
-                  });
-                }}
-                className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2 shadow-lg"
-                title="Copiar información del ticket"
-              >
-                📋
-              </button>
+${businessName} - Sistema POS v1.0
+                    `.trim();
+                    
+                    navigator.clipboard.writeText(ticketData).then(() => {
+                      alert('✅ Información del ticket copiada al portapapeles');
+                    }).catch(() => {
+                      alert('❌ No se pudo copiar al portapapeles');
+                    });
+                  }}
+                  className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                  title="Copiar información del ticket"
+                >
+                  📋 Copiar
+                </button>
+              </div>
+              
+              <div className="mt-4 text-center">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  💡 Guarda este comprobante para tus registros
+                </p>
+              </div>
             </div>
           </div>
         </div>
