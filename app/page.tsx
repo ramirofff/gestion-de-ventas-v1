@@ -547,48 +547,32 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
           console.warn('⚠️ Error leyendo localStorage:', error);
         }
 
-        // PASO 3: Ordenar por fecha (más recientes primero)
-        allSales.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-        
-        console.log('📊 TOTAL VENTAS COMBINADAS:', allSales.length);
-        console.log('📊 Desglose por fuente:', {
-          supabase: allSales.filter(s => s.source === 'supabase').length,
-          localStorage: allSales.filter(s => s.source === 'localStorage').length
-        });
-
+        // PASO 3: Eliminar duplicados por ticket_id o stripe_payment_intent_id
+        const uniqueSalesMap = new Map();
+        for (const sale of allSales) {
+          const key = sale.stripe_payment_intent_id || sale.ticket_id || sale.id;
+          if (!uniqueSalesMap.has(key)) {
+            uniqueSalesMap.set(key, sale);
+          }
+        }
+        const uniqueSales = Array.from(uniqueSalesMap.values());
+        // Ordenar por fecha (más recientes primero)
+        uniqueSales.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        console.log('📊 TOTAL VENTAS ÚNICAS:', uniqueSales.length);
         // Actualizar estado
-        setVentas(allSales);
-
+        setVentas(uniqueSales);
         // PASO 4: Calcular reportes combinados
-        if (view === 'reports' && allSales.length > 0) {
-          // Filtros de fecha
+        if (view === 'reports' && uniqueSales.length > 0) {
           const today = new Date();
           const todayStr = today.toISOString().split('T')[0];
           const thisMonth = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
-          
-          const totalVentas = allSales.reduce((sum: number, sale) => sum + (Number(sale.total) || 0), 0);
-          const cantidadTickets = allSales.length;
+          const totalVentas = uniqueSales.reduce((sum: number, sale) => sum + (Number(sale.total) || 0), 0);
+          const cantidadTickets = uniqueSales.length;
           const promedio = cantidadTickets > 0 ? totalVentas / cantidadTickets : 0;
-          
-          // Ventas del día
-          const ventasHoy = allSales.filter(sale => 
-            sale.created_at && sale.created_at.startsWith(todayStr)
-          );
+          const ventasHoy = uniqueSales.filter(sale => sale.created_at && sale.created_at.startsWith(todayStr));
           const totalHoy = ventasHoy.reduce((sum: number, sale) => sum + (Number(sale.total) || 0), 0);
-          
-          // Ventas del mes
-          const ventasMes = allSales.filter(sale => 
-            sale.created_at && sale.created_at.startsWith(thisMonth)
-          );
+          const ventasMes = uniqueSales.filter(sale => sale.created_at && sale.created_at.startsWith(thisMonth));
           const totalMes = ventasMes.reduce((sum: number, sale) => sum + (Number(sale.total) || 0), 0);
-          
-          console.log('📊 REPORTES CALCULADOS:');
-          console.log('- Total general:', totalVentas, 'USD');
-          console.log('- Total hoy:', totalHoy, 'USD');
-          console.log('- Total mes:', totalMes, 'USD');
-          console.log('- Tickets:', cantidadTickets);
-          console.log('- Promedio:', promedio.toFixed(2), 'USD');
-          
           setReportes({ 
             totalVentas, 
             cantidadTickets, 
@@ -634,82 +618,66 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
   };
 
   // Función para iniciar el pago con Stripe
+  // Bloqueo de ventas si no tiene Stripe Connect
+  const [showStripeModal, setShowStripeModal] = useState(false);
   const handlePay = () => {
+    if (!stripeConnectStatus.connected) {
+      setShowStripeModal(true);
+      return;
+    }
     setShowStripePayment(true);
   };
 
   // Función para manejar éxito de pago de Stripe
   // Función auxiliar que procesa el pago y opcionalmente abre ticket externo
+  // Evitar doble apertura de ticket
+  let ticketWindowRef: Window | null = null;
   const handleStripePaymentSuccessWithTicket = async (sessionId: string) => {
     console.log('🎫 Procesando pago de Stripe para abrir ticket externo:', sessionId);
-    
     try {
-      // En lugar de procesar internamente, abrir directamente la página de ticket de Stripe
-      console.log('🔗 Abriendo ticket de Stripe en nueva ventana...');
-      
-      // Abrir la página de éxito de Stripe con el sessionId para mostrar/imprimir ticket
+      // Solo abrir si no hay ventana abierta o está cerrada
       const ticketUrl = `${window.location.origin}/payment-success.html?session_id=${sessionId}`;
-      const ticketWindow = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
-      
-      if (ticketWindow) {
-        console.log('✅ Ventana de ticket abierta exitosamente');
+      if (!ticketWindowRef || ticketWindowRef.closed) {
+        ticketWindowRef = window.open(ticketUrl, '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
+        if (ticketWindowRef) {
+          console.log('✅ Ventana de ticket abierta exitosamente');
+        } else {
+          console.warn('⚠️ No se pudo abrir la ventana - posible bloqueo de popups');
+          setToast({ type: 'warning', message: 'Permite popups para ver el ticket de compra' });
+        }
       } else {
-        console.warn('⚠️ No se pudo abrir la ventana - posible bloqueo de popups');
-        setToast({ type: 'warning', message: 'Permite popups para ver el ticket de compra' });
+        ticketWindowRef.focus();
+        console.log('🔄 Ticket ya abierto, trayendo al frente');
       }
-      
       // Limpiar carrito y cerrar modal de pago
       clearCart();
       setShowStripePayment(false);
       setView('home');
-      
-      // Mostrar mensaje de éxito
       setToast({ type: 'success', message: '¡Pago procesado exitosamente! Ticket abierto en nueva ventana.' });
-      
-      // Refrescar historial de ventas y productos
       setSalesRefreshTrigger(prev => prev + 1);
-      
-      // IMPORTANTE: Refrescar productos también
-      console.log('🔄 Refrescando productos después de completar pago...');
       fetchProducts();
-      
-      // También procesar la venta en segundo plano para guardarla en BD
+      // Procesar la venta en segundo plano para guardarla en BD
       try {
-        // Usar endpoint simplificado para evitar problemas de autenticación
         const simpleResponse = await fetch('/api/stripe/process-payment-simple', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sessionId: sessionId,
-            userId: user?.id
-          })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sessionId, userId: user?.id })
         });
-
         const simpleResult = await simpleResponse.json();
-        
         if (simpleResult.success) {
-          console.log('✅ Venta procesada correctamente en segundo plano');
-          // Refrescar historial adicional
           setTimeout(() => {
             setSalesRefreshTrigger(prev => prev + 1);
-            fetchProducts(); // Refrescar productos de nuevo por si acaso
+            fetchProducts();
           }, 1000);
         } else {
           console.warn('⚠️ Problema procesando venta en segundo plano:', simpleResult.error);
         }
       } catch (error) {
         console.warn('⚠️ Error procesando venta en segundo plano (ticket ya mostrado):', error);
-        // No hacer fallback para evitar duplicados - el ticket ya se mostró
       }
-      
     } catch (error) {
       console.error('❌ Error en handleStripePaymentSuccessWithTicket:', error);
-      setToast({ 
-        type: 'error', 
-        message: 'Error procesando el pago: ' + (error instanceof Error ? error.message : 'Error desconocido')
-      });
+      setToast({ type: 'error', message: 'Error procesando el pago: ' + (error instanceof Error ? error.message : 'Error desconocido') });
     }
   };
 
@@ -972,6 +940,31 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
   const { theme, setTheme, getThemeClass } = useTheme();
   // Resto de estados
   const { products, loading, setProducts, fetchProducts } = useProductsContext();
+
+  // Modal de vinculación Stripe
+  const stripeModal = (
+    <Modal open={showStripeModal} onClose={() => setShowStripeModal(false)} title="Vincula tu cuenta con Stripe">
+      <div className="flex flex-col items-center gap-4 p-4">
+        <CreditCard className="w-12 h-12 text-blue-500 mb-2" />
+        <h2 className="text-xl font-bold text-blue-600 mb-2">Debes vincular tu cuenta con Stripe para poder cobrar</h2>
+        <p className="text-gray-700 dark:text-gray-300 text-center mb-4">Configura tu cuenta de Stripe Connect para habilitar los cobros y recibir pagos de tus ventas.</p>
+        <a
+          href="/stripe-connect-manual"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold text-lg transition-colors"
+        >
+          Vincular con Stripe
+        </a>
+        <button
+          onClick={() => setShowStripeModal(false)}
+          className="mt-2 text-blue-500 hover:underline"
+        >
+          Cancelar
+        </button>
+      </div>
+    </Modal>
+  );
   const { categories } = useCategories();
   const [selectedCategory, setSelectedCategory] = useState('');
   const { cart, addToCart, removeFromCart, clearCart, updateQuantity } = useCart();
@@ -1111,6 +1104,7 @@ const [ticket, setTicket] = useState<{
   if (view === 'admin' && user) {
     return (
       <main className={`min-h-screen ${bgMain} p-2 sm:p-8`}>
+        {stripeModal}
         <div className="flex flex-col sm:flex-row items-center justify-between mb-4 sm:mb-8 gap-2 sm:gap-0">
           <h1 className={`text-3xl font-bold text-yellow-400 flex items-center gap-3`}>
             <Boxes className="w-8 h-8 text-green-400" /> Administrar productos

@@ -26,16 +26,28 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider = ({ children }: ThemeProviderProps) => {
-  const [theme, setTheme] = useState<Theme>('dark');
+  // Siempre iniciar en 'dark' por defecto
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme') as Theme;
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        return savedTheme;
+      }
+    }
+    return 'dark';
+  });
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [themeLoaded, setThemeLoaded] = useState(false);
 
   // Cargar tema desde localStorage inmediatamente en el cliente
   useEffect(() => {
+    // Al montar, sincronizar localStorage y clase HTML con el tema actual
     if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('theme') as Theme;
-      if (savedTheme === 'light' || savedTheme === 'dark') {
-        setTheme(savedTheme);
+      localStorage.setItem('theme', theme);
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
       }
       setThemeLoaded(true);
     }
@@ -84,15 +96,26 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
       if (currentUser && themeLoaded) {
         try {
           const userTheme = await UserSettingsManager.getTheme(currentUser.id);
-          if (userTheme !== theme) {
-            setTheme(userTheme);
-            // Sincronizar con localStorage
+          if (userTheme === 'light' || userTheme === 'dark') {
+            if (userTheme !== theme) {
+              setTheme(userTheme);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('theme', userTheme);
+              }
+            }
+          } else {
+            // Si el valor en Supabase es inválido, forzar 'dark'
+            setTheme('dark');
             if (typeof window !== 'undefined') {
-              localStorage.setItem('theme', userTheme);
+              localStorage.setItem('theme', 'dark');
             }
           }
         } catch (error) {
           console.warn('No se pudo cargar el tema del usuario:', error);
+          setTheme('dark');
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('theme', 'dark');
+          }
         }
       }
     };
