@@ -23,9 +23,9 @@ export default function StripeConnectDemo() {
 
   // Datos del formulario de pago (customerEmail se elimina porque se usa automáticamente)
   const [paymentForm, setPaymentForm] = useState({
-    amount: '100',
-    productName: 'Producto de Prueba',
-    commissionRate: '0.05',
+  amount: '',
+  productName: '',
+  commissionRate: '',
   });
 
   const router = useRouter();

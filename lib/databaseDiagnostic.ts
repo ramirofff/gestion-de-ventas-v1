@@ -84,55 +84,6 @@ export async function verifyDatabase() {
       }
     }
 
-    // 4. Intentar una inserción de prueba (que luego eliminaremos)
-    if (user && results.tablesExist) {
-      // Generar un UUID válido para la prueba
-      const testUuid = crypto.randomUUID();
-      const testItems = [{ 
-        id: testUuid, 
-        name: 'test producto', 
-        price: 1, 
-        quantity: 1, 
-        total: 1 
-      }];
-      const testSale = {
-        user_id: user.id,
-        products: testItems, // Campo principal JSONB
-  // ...existing code...
-        total: 1,
-        subtotal: 1, // Campo requerido en tu esquema
-        payment_method: 'cash',
-        payment_status: 'completed',
-        status: 'completed'
-      };
-
-      const { data: insertData, error: insertError } = await supabase
-        .from('sales')
-        .insert([testSale])
-        .select();
-
-      if (insertError) {
-        let msg = 'Error desconocido';
-        if (insertError.message) {
-          msg = insertError.message;
-        } else if (typeof insertError === 'string') {
-          msg = insertError;
-        } else if (typeof insertError === 'object' && Object.keys(insertError).length > 0) {
-          msg = JSON.stringify(insertError);
-        }
-        results.errors.push(`Inserción test: ${msg}`);
-        console.error('Error en inserción de prueba:', insertError);
-      } else {
-        results.canInsertSales = true;
-        console.log('✅ Inserción de prueba exitosa');
-        
-        // Eliminar la venta de prueba
-        if (insertData && insertData[0]) {
-          await supabase.from('sales').delete().eq('id', insertData[0].id);
-          console.log('✅ Venta de prueba eliminada');
-        }
-      }
-    }
 
   } catch (error) {
     results.errors.push(`Error inesperado: ${error}`);

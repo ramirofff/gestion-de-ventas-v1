@@ -1,4 +1,4 @@
-'use client';
+
 
 import { useState, useEffect } from 'react';
 import { QRDisplay } from './QRDisplay';
@@ -23,6 +23,7 @@ interface StripePaymentProps {
 }
 
 export function StripePayment({ amount, originalAmount, discountAmount, items, onClose, onSuccess, selectedClient }: StripePaymentProps) {
+  const subtotal = Array.isArray(items) ? items.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0) : 0;
   const [loading, setLoading] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -389,15 +390,16 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                 </div>
               ))}
             </div>
-            {/* Mostrar descuento si existe */}
-            {discountAmount && discountAmount > 0 && (
-              <div className="flex justify-between text-sm mt-2">
-                <span className={getThemeClass({dark: 'text-green-300', light: 'text-green-700'})}>
-                  Descuento:
-                </span>
-                <span className="text-green-500">- ${discountAmount.toLocaleString('en-US')} USD</span>
+              <div className="flex justify-between pt-2 mt-2">
+                <span>Subtotal:</span>
+                <span>${subtotal.toFixed(2)}</span>
               </div>
-            )}
+              {Number(discountAmount) > 0 && (
+                <div className="flex justify-between text-green-600 dark:text-green-400">
+                  <span>Descuento:</span>
+                  <span>- ${Number(discountAmount).toFixed(2)}</span>
+                </div>
+              )}
             <hr className={`my-3 ${getThemeClass({dark: 'border-zinc-600', light: 'border-gray-300'})}`} />
             <div className="flex justify-between items-center text-xl font-bold">
               <span className={getThemeClass({dark: 'text-white', light: 'text-gray-900'})}>Total:</span>

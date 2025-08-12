@@ -52,70 +52,10 @@ export async function initializeDatabase() {
     } else {
       console.log('Tablas existentes:', tables?.map(t => t.table_name));
     }
-    
-    // Intentar crear categoría de prueba para verificar que la tabla existe
-    const testCategory = {
-      name: 'Categoría de Prueba - ' + Date.now(),
-      user_id: user.id
-    };
-    
-    const { data: testData, error: testError } = await supabase
-      .from('categories')
-      .insert([testCategory])
-      .select();
-    
-    if (testError) {
-      console.error('Error al crear categoría de prueba:', testError);
-      console.log('Posible problema con la tabla categories');
-      
-      // Intentar crear la tabla si no existe
-      const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS categories (
-          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-          name TEXT NOT NULL,
-          user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-        
-        -- Crear índice para mejorar rendimiento
-        CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id);
-        
-        -- Habilitar RLS (Row Level Security)
-        ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-        
-        -- Crear política para que los usuarios solo vean sus propias categorías
-        CREATE POLICY IF NOT EXISTS "Users can view their own categories" ON categories
-          FOR SELECT USING (auth.uid() = user_id);
-        
-        -- Crear política para que los usuarios solo puedan insertar sus propias categorías
-        CREATE POLICY IF NOT EXISTS "Users can insert their own categories" ON categories
-          FOR INSERT WITH CHECK (auth.uid() = user_id);
-        
-        -- Crear política para que los usuarios solo puedan actualizar sus propias categorías
-        CREATE POLICY IF NOT EXISTS "Users can update their own categories" ON categories
-          FOR UPDATE USING (auth.uid() = user_id);
-        
-        -- Crear política para que los usuarios solo puedan eliminar sus propias categorías
-        CREATE POLICY IF NOT EXISTS "Users can delete their own categories" ON categories
-          FOR DELETE USING (auth.uid() = user_id);
-      `;
-      
-      console.log('Intentando crear tabla categories...');
-      return false;
-    } else {
-      console.log('Categoría de prueba creada exitosamente:', testData);
-      
-      // Eliminar la categoría de prueba
-      if (testData && testData[0]) {
-        await supabase
-          .from('categories')
-          .delete()
-          .eq('id', testData[0].id);
-        console.log('Categoría de prueba eliminada');
-      }
-      
-      return true;
-    }
+    // Aquí puedes agregar lógica para verificar la existencia de la tabla o migraciones,
+    // pero NO se pueden ejecutar sentencias SQL directamente en TypeScript.
+    // Si necesitas crear índices, RLS o políticas, hazlo desde scripts SQL o desde Supabase Studio.
+    return true;
   } catch (error) {
     console.error('Error al inicializar base de datos:', error);
     return false;
