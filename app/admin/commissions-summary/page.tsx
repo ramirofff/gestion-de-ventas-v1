@@ -153,7 +153,7 @@ export default function CommissionsSummaryPage() {
 
 
   return (
-    <div className={theme === 'dark' ? 'min-h-screen bg-zinc-950 text-white' : 'min-h-screen bg-white text-zinc-900'} style={{ padding: 8 }}>
+  <div className={theme === 'dark' ? 'bg-zinc-950 text-white' : 'bg-white text-zinc-900'} style={{ padding: 8 }}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
           <a href="/" className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-900">← Volver al Home</a>
@@ -173,7 +173,7 @@ export default function CommissionsSummaryPage() {
         </div>
       </div>
       {/* Responsive: usuarios conectados arriba en mobile, a la izquierda en desktop */}
-      <div className="flex flex-col lg:flex-row gap-8 h-full min-h-[70vh] overflow-y-auto">
+  <div className="flex flex-col lg:flex-row gap-8">
         <div className="w-full lg:w-80 mb-4 lg:mb-0 flex-shrink-0">
           <h2 className="text-xl font-semibold mb-4">Usuarios conectados</h2>
           <ul className="space-y-2">
@@ -297,10 +297,10 @@ export default function CommissionsSummaryPage() {
                     </tr>
                   </thead>
                   <tbody className={theme === 'dark' ? 'text-blue-100' : ''}>
-                    {commissions.length === 0 ? (
-                      <tr><td colSpan={7} className="text-center p-4 text-zinc-400">No hay comisiones para este usuario.</td></tr>
+                    {commissions.filter(c => c.status === 'completed').length === 0 ? (
+                      <tr><td colSpan={7} className="text-center p-4 text-zinc-400">No hay comisiones completadas para este usuario.</td></tr>
                     ) : (
-                      commissions.map((c) => (
+                      commissions.filter(c => c.status === 'completed').map((c) => (
                         <tr key={c.id} className={theme === 'dark' ? 'hover:bg-zinc-800' : 'hover:bg-gray-50'}>
                           <td className="p-2 border-b border-zinc-700">{c.product_name}</td>
                           <td className="p-2 border-b border-zinc-700">{new Date(c.created_at).toLocaleString()}</td>
