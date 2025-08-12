@@ -1,5 +1,9 @@
 
+
 "use client";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+
 // Types for connected users and commission details
 interface ConnectedUser {
   id: string; // uuid de connected_accounts
@@ -7,6 +11,7 @@ interface ConnectedUser {
   business_name: string;
   email: string;
   stripe_account_id: string;
+  commission_rate?: number | string | null;
 }
 
 interface CommissionDetail {
@@ -19,8 +24,6 @@ interface CommissionDetail {
   status: string;
   currency: string;
 }
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 
 export default function CommissionsSummaryPage() {
   const [users, setUsers] = useState<ConnectedUser[]>([]);
@@ -30,6 +33,27 @@ export default function CommissionsSummaryPage() {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isSuperuser, setIsSuperuser] = useState<boolean | null>(null);
+  // Estado para edición de comisión
+  const [editCommission, setEditCommission] = useState(false);
+  const [commissionInput, setCommissionInput] = useState('');
+
+  // Actualizar input cuando cambia el usuario seleccionado
+  // Utilidad para parsear commission_rate a número seguro
+  function parseCommissionRate(val: number | string | null | undefined): number | null {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'number') return isNaN(val) ? null : val;
+    if (typeof val === 'string') {
+      const n = parseFloat(val);
+      return isNaN(n) ? null : n;
+    }
+    return null;
+  }
+
+  useEffect(() => {
+    const rate = parseCommissionRate(selectedUser?.commission_rate);
+    setCommissionInput(rate !== null ? (rate * 100).toString() : '');
+    setEditCommission(false);
+  }, [selectedUser?.id, selectedUser?.commission_rate]);
 
   // Check if current user is superuser
   useEffect(() => {
@@ -58,6 +82,21 @@ export default function CommissionsSummaryPage() {
       })
       .catch(() => setUsers([]));
   }, []);
+
+  // Obtener el commission_rate cuando se selecciona un usuario
+  useEffect(() => {
+    if (!selectedUser) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from('connected_accounts')
+        .select('commission_rate')
+        .eq('id', selectedUser.id)
+        .single();
+      if (!error && data) {
+        setSelectedUser({ ...selectedUser, commission_rate: data.commission_rate });
+      }
+    })();
+  }, [selectedUser?.id]);
 
   // Fetch commissions for selected user
   useEffect(() => {
@@ -151,6 +190,75 @@ export default function CommissionsSummaryPage() {
             <div className="flex-1">
               {selectedUser && (
                 <div className="mb-6">
+                  {/* Mostrar y editar comisión actual */}
+                  <div className="mb-4 p-4 rounded flex flex-col gap-2 bg-zinc-900 text-blue-100 border border-zinc-700 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full">
+                      <span className="font-semibold">Comisión actual:</span>
+                      {!editCommission ? (
+                        <div className="flex items-center gap-2 w-full max-w-xs">
+                          <span className="text-lg font-mono px-3 py-1 rounded bg-zinc-800 border border-zinc-700">
+                            {(() => {
+                              const rate = parseCommissionRate(selectedUser.commission_rate);
+                              if (rate !== null) {
+                                return (rate * 100).toFixed(2);
+                              }
+                              return '—';
+                            })()}
+                          </span>
+                          <span className="text-base">%</span>
+                          <button
+                            className="ml-2 px-3 py-1 rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-900 text-sm transition w-full sm:w-auto"
+                            onClick={() => setEditCommission(true)}
+                          >Cambiar</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 w-full max-w-xs">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.01}
+                            value={commissionInput}
+                            onChange={e => setCommissionInput(e.target.value)}
+                            className="w-24 px-2 py-1 rounded border border-blue-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 dark:bg-zinc-900 dark:text-blue-200 dark:border-blue-700 dark:focus:border-blue-400 dark:focus:ring-blue-900 transition"
+                          />
+                          <span className="text-base">%</span>
+                          <button
+                            className="ml-2 px-3 py-1 rounded bg-green-700 text-white hover:bg-green-800 border border-green-900 text-sm transition w-full sm:w-auto"
+                            onClick={async () => {
+                              const value = Number(commissionInput);
+                              if (isNaN(value) || value < 0 || value > 100) {
+                                alert('Por favor ingresa un porcentaje válido.');
+                                return;
+                              }
+                              // Guardar como decimal (por ejemplo, 5% => 0.05)
+                              const decimalValue = value / 100;
+                              const { error } = await supabase
+                                .from('connected_accounts')
+                                .update({ commission_rate: decimalValue })
+                                .eq('id', selectedUser.id);
+                              if (error) {
+                                alert('Error al actualizar comisión: ' + error.message);
+                                return;
+                              }
+                              // Refrescar usuario desde la base para evitar desincronización y parsear correctamente
+                              const { data: refreshed, error: err2 } = await supabase
+                                .from('connected_accounts')
+                                .select('commission_rate')
+                                .eq('id', selectedUser.id)
+                                .single();
+                              setSelectedUser({ ...selectedUser, commission_rate: refreshed?.commission_rate ?? decimalValue });
+                              setEditCommission(false);
+                            }}
+                          >Guardar</button>
+                          <button
+                            className="ml-2 px-3 py-1 rounded bg-zinc-700 text-white hover:bg-zinc-800 border border-zinc-900 text-sm transition w-full sm:w-auto"
+                            onClick={() => setEditCommission(false)}
+                          >Cancelar</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   {/* Resumen de totales */}
                   {commissions.length > 0 && (
                     <div className="mb-4 p-4 rounded bg-zinc-800 text-white flex flex-col gap-2">

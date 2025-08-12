@@ -1,5 +1,3 @@
-
-
 import { useState, useEffect } from 'react';
 import { QRDisplay } from './QRDisplay';
 import { ClientAccount } from '../lib/client-accounts';
@@ -23,11 +21,23 @@ interface StripePaymentProps {
 }
 
 export function StripePayment({ amount, originalAmount, discountAmount, items, onClose, onSuccess, selectedClient }: StripePaymentProps) {
+  // Cerrar modal al hacer clic fuera
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && onClose) onClose();
+  };
   const subtotal = Array.isArray(items) ? items.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0) : 0;
   const [loading, setLoading] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(true);
+  // Cerrar modal con ESC o clic fuera
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && onClose) onClose();
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [isPolling, setIsPolling] = useState(false);
@@ -331,18 +341,24 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   };
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center ${getThemeClass({dark: 'bg-black/50', light: 'bg-black/50'})}`}>
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center ${getThemeClass({dark: 'bg-black/50', light: 'bg-black/50'})}`}
+      onClick={handleBackdropClick}
+      tabIndex={-1}
+    >
       <div className={`rounded-2xl shadow-2xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto ${getThemeClass({
         dark: 'bg-zinc-900 text-white',
         light: 'bg-white text-gray-900'
-      })}`}>
+      })}`}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
         <div className={`flex justify-between items-start p-6 border-b ${getThemeClass({dark: 'border-zinc-700', light: 'border-gray-200'})}`}>
           <div className="flex-1">
             <h2 className={`text-2xl font-bold mb-3 ${getThemeClass({dark: 'text-white', light: 'text-gray-900'})}`}>
               💳 Pagar con Stripe
             </h2>
-            {currentUser?.email && (
+            {currentUser && currentUser.email && (
               <div className={`p-3 rounded-lg border text-sm ${getThemeClass({
                 dark: 'bg-blue-900/20 border-blue-700 text-blue-300',
                 light: 'bg-blue-50 border-blue-200 text-blue-700'
@@ -536,17 +552,16 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
 
                 {/* Mostrar QR o Link según selección */}
                 {showQR ? (
-                  <div className="text-center">
-                    <div className={`inline-block p-4 rounded-xl ${getThemeClass({dark: 'bg-white', light: 'bg-white'})}`}>
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className={`inline-block p-4 rounded-xl ${getThemeClass({dark: 'bg-white', light: 'bg-white'})}`} style={{zIndex: 1}}>
                       <QRDisplay 
-                        value={paymentUrl}
+                        value={paymentUrl || ''}
                         size={200}
                       />
                     </div>
                     <p className={`mt-3 text-sm ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
                       📱 Escanea el código QR para pagar con tarjeta internacional
                     </p>
-                    
                     {/* Estado del polling */}
                     {isPolling && (
                       <div className="flex items-center justify-center gap-2 mt-4">
@@ -556,18 +571,17 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                         </span>
                       </div>
                     )}
-                    
-                    {/* Botón cancelar compra - siempre visible cuando hay QR */}
+                    {/* Botón cancelar compra - siempre visible y accesible debajo del QR */}
                     <button
                       onClick={onClose}
-                      className={`w-full mt-4 py-3 px-4 rounded-lg border-2 border-dashed transition-colors font-medium ${getThemeClass({
+                      className={`w-full mt-6 py-3 px-4 rounded-lg border-2 border-dashed transition-colors font-medium ${getThemeClass({
                         dark: 'border-red-600 text-red-400 hover:bg-red-900/20 hover:border-red-500',
                         light: 'border-red-500 text-red-600 hover:bg-red-50 hover:border-red-400'
                       })}`}
+                      style={{zIndex: 2, position: 'relative'}}
                     >
                       ❌ Cancelar compra
                     </button>
-                    
                     {paymentStatus === 'completed' && (
                       <div className="text-green-500 text-sm font-bold mt-4">
                         ✅ ¡Pago completado exitosamente!
