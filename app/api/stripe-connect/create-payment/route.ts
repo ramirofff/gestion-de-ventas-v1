@@ -90,30 +90,50 @@ export async function POST(request: NextRequest) {
     console.log('📝 Payment Intent ID:', session.payment_intent);
 
     // Guardar venta en base de datos
-    const commissionAmount = Math.round(amount * commissionRate);
-    const netAmount = amount - commissionAmount;
+  const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
+  const netAmount = Math.round((amount - commissionAmount) * 100) / 100;
 
-    // Para sesiones de Checkout, el payment_intent puede ser null inicialmente
-    // Usaremos el session_id como referencia principal
-    const { error: insertError } = await supabaseAdmin
-      .from('commission_sales')
-      .insert([{
-        connected_account_id: accountData.id,
-        stripe_payment_intent_id: session.payment_intent as string || null, // Permitir null temporalmente
-        stripe_session_id: session.id,
-        customer_email: customerEmail || userEmail, // Usar email del usuario
-        product_name: productName,
-        amount_total: amount,
-        commission_amount: commissionAmount,
-        net_amount: netAmount,
-        currency: currency.toUpperCase(),
-        status: 'pending',
-      }]);
-
-    if (insertError) {
-      console.error('❌ Error guardando venta:', insertError);
+    // Verificar si ya existe una comisión para este payment_intent o session_id
+    let existingCommission = null;
+    if (session.payment_intent) {
+      const { data } = await supabaseAdmin
+        .from('commission_sales')
+        .select('id')
+        .eq('stripe_payment_intent_id', session.payment_intent)
+        .single();
+      existingCommission = data;
     } else {
-      console.log('💾 Venta guardada en BD');
+      const { data } = await supabaseAdmin
+        .from('commission_sales')
+        .select('id')
+        .eq('stripe_session_id', session.id)
+        .single();
+      existingCommission = data;
+    }
+
+    if (!existingCommission) {
+      const { error: insertError } = await supabaseAdmin
+        .from('commission_sales')
+        .insert([{
+          connected_account_id: accountData.id,
+          stripe_payment_intent_id: session.payment_intent as string || null, // Permitir null temporalmente
+          stripe_session_id: session.id,
+          customer_email: customerEmail || userEmail, // Usar email del usuario
+          product_name: productName,
+          amount_total: amount,
+          commission_amount: commissionAmount,
+          net_amount: netAmount,
+          currency: currency.toUpperCase(),
+          status: 'pending',
+        }]);
+
+      if (insertError) {
+        console.error('❌ Error guardando venta:', insertError);
+      } else {
+        console.log('💾 Venta guardada en BD');
+      }
+    } else {
+      console.log('⚠️ Ya existe una comisión pendiente para este pago, no se inserta duplicado.');
     }
 
     return NextResponse.json({

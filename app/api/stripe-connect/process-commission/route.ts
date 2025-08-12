@@ -17,10 +17,12 @@ export async function POST(request: NextRequest) {
       stripePaymentIntentId,
       saleAmount,
       saleItems,
-      customerEmail 
+      customerEmail,
+      stripeSessionId
     } = body;
 
-    if (!userId || !stripePaymentIntentId || !saleAmount) {
+    // Permitir que stripePaymentIntentId sea null si stripeSessionId está presente (caso QR)
+    if (!userId || !saleAmount || (!stripePaymentIntentId && !body.stripeSessionId)) {
       return NextResponse.json(
         { error: 'Datos requeridos faltantes' },
         { status: 400 }
@@ -64,85 +66,114 @@ export async function POST(request: NextRequest) {
       netAmount
     });
 
-    // 3. Verificar si ya existe una comisión para este payment intent
-    const { data: existingCommission } = await supabaseAdmin
-      .from('commission_sales')
-      .select('id')
-      .eq('stripe_payment_intent_id', stripePaymentIntentId)
-      .single();
-
-    if (existingCommission) {
-      console.log('⚠️ Comisión ya procesada para este payment intent');
-      return NextResponse.json({
-        processed: true,
-        message: 'Comisión ya procesada anteriormente',
-        isDuplicate: true
-      });
+    // Buscar registro pending existente por payment_intent_id o session_id (QR)
+    let commission = null;
+    let error = null;
+    let res = null;
+    if (stripePaymentIntentId) {
+      res = await supabaseAdmin
+        .from('commission_sales')
+        .select('*')
+        .eq('stripe_payment_intent_id', stripePaymentIntentId)
+        .ilike('status', 'pending');
+      commission = res.data && res.data[0];
+      error = res.error;
+      console.log('[COMMISSION] Buscando por payment_intent_id:', stripePaymentIntentId, 'Resultado:', commission?.id, 'Error:', error);
     }
-
-    // 4. Guardar registro de comisión
-    const productNames = saleItems?.map((item: any) => item.name).join(', ') || 'Venta';
-    
-    const { data: commissionSale, error: insertError } = await supabaseAdmin
+    // Buscar por session_id (QR) aunque stripePaymentIntentId sea null
+    if ((!commission || error) && stripeSessionId) {
+      res = await supabaseAdmin
+        .from('commission_sales')
+        .select('*')
+        .eq('stripe_session_id', stripeSessionId)
+        .ilike('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      commission = res.data && res.data[0];
+      error = res.error;
+      console.log('[COMMISSION] Buscando por session_id:', stripeSessionId, 'Resultado:', commission?.id, 'Error:', error);
+    }
+    // Si aún no se encontró, buscar por monto/email
+    if ((!commission || error) && customerEmail && saleAmount) {
+      res = await supabaseAdmin
+        .from('commission_sales')
+        .select('*')
+        .eq('amount_total', saleAmount)
+        .eq('customer_email', customerEmail)
+        .ilike('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      commission = res.data && res.data[0];
+      error = res.error;
+      console.log('[COMMISSION] Buscando por monto/email:', saleAmount, customerEmail, 'Resultado:', commission?.id, 'Error:', error);
+    }
+    if (error || !commission) {
+      console.warn('No se encontró comisión pending para este pago. No se crea duplicado.');
+      return NextResponse.json({
+        processed: false,
+        message: 'No se encontró comisión pending para este pago',
+        isDuplicate: false
+      }, { status: 404 });
+    }
+    // Actualizar status a completed y setear updated_at
+    // También actualizar stripe_account_id si está null
+    const updateFields: any = {
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+      stripe_payment_intent_id: stripePaymentIntentId || commission.stripe_payment_intent_id
+    };
+    if (!commission.stripe_account_id && connectedAccount.stripe_account_id) {
+      updateFields.stripe_account_id = connectedAccount.stripe_account_id;
+    }
+    const { data: updateResult, error: updateError } = await supabaseAdmin
       .from('commission_sales')
-      .insert([{
-        connected_account_id: connectedAccount.id,
-        stripe_payment_intent_id: stripePaymentIntentId,
-        customer_email: customerEmail,
-        product_name: productNames,
-        amount_total: saleAmount,
-        commission_amount: commissionAmount,
-        net_amount: netAmount,
-        currency: 'usd',
-        status: 'completed',
-        created_at: new Date().toISOString(),
-      }])
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('❌ Error guardando comisión:', insertError);
+      .update(updateFields)
+      .eq('id', commission.id)
+      .select();
+    console.log('[COMMISSION] Intentando actualizar registro:', commission.id, 'Campos:', updateFields, 'Resultado:', updateResult, 'Error:', updateError);
+    if (updateError) {
+      console.error('❌ Error actualizando comisión:', updateError);
       return NextResponse.json(
-        { error: 'Error guardando registro de comisión' },
+        { error: 'Error actualizando registro de comisión' },
         { status: 500 }
       );
     }
-
-    console.log('✅ Comisión guardada exitosamente:', commissionSale.id);
-
-    // 5. Para cuentas reales (no Argentina), crear transfer automático
+    if (!updateResult || updateResult.length === 0) {
+      console.error('❌ No se actualizó ningún registro de comisión.');
+      return NextResponse.json(
+        { error: 'No se actualizó ningún registro de comisión' },
+        { status: 500 }
+      );
+    }
+    // Transfer automático solo si corresponde
     if (connectedAccount.country !== 'AR' && connectedAccount.charges_enabled) {
       try {
         console.log('💸 Creando transfer automático a cuenta real...');
-        
         const transfer = await stripe.transfers.create({
-          amount: Math.round(netAmount * 100), // Convertir a centavos
+          amount: Math.round((commission.net_amount || 0) * 100),
           currency: 'usd',
           destination: connectedAccount.stripe_account_id,
           metadata: {
-            commission_sale_id: commissionSale.id,
+            commission_sale_id: commission.id,
             original_payment_intent: stripePaymentIntentId,
           }
         });
-
         // Actualizar registro con transfer ID
         await supabaseAdmin
           .from('commission_sales')
           .update({ transfer_id: transfer.id })
-          .eq('id', commissionSale.id);
-
+          .eq('id', commission.id);
         console.log('✅ Transfer automático creado:', transfer.id);
       } catch (transferError) {
         console.error('⚠️ Error creando transfer (continuando):', transferError);
       }
     }
-
     return NextResponse.json({
       processed: true,
-      message: 'Comisión procesada exitosamente',
+      message: 'Comisión completada exitosamente',
       commission: {
-        id: commissionSale.id,
-        amount: commissionAmount,
+        id: commission.id,
+        amount: commission.commission_amount,
         rate: commissionRate,
         businessName: connectedAccount.business_name,
         country: connectedAccount.country,

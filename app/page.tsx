@@ -1109,7 +1109,6 @@ const [ticket, setTicket] = useState<{
     window.location.href = "/auth";
   };
 
-  // (Eliminado duplicado de utilidades visuales)
 
 
   // --- BLOQUE DE VISTAS CONDICIONALES ---
@@ -2016,7 +2015,6 @@ const [ticket, setTicket] = useState<{
                 <BarChart2 className="w-6 h-6 text-white" /> Resumen de Comisiones
               </a>
             )}
-  // ...eliminado duplicado...
             <button onClick={() => setView('admin')} className={`${btnBase} ${btnAdmin} transition-transform hover:scale-105`}>
               <Boxes className="w-6 h-6 text-green-400" /> Administrar productos
             </button>

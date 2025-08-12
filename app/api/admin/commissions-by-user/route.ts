@@ -18,11 +18,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([], { status: 200 });
   }
   const stripe_account_id = accounts.stripe_account_id;
-  // Buscar comisiones por connected_account_id
+  // Buscar solo comisiones completadas por connected_account_id
   const { data, error } = await supabaseAdmin
     .from('commission_sales')
     .select('id, amount_total, commission_amount, net_amount, product_name, created_at, status, currency')
     .eq('connected_account_id', stripe_account_id)
+    .eq('status', 'completed')
     .order('created_at', { ascending: false });
   if (error) {
     return NextResponse.json([], { status: 500 });

@@ -11,7 +11,7 @@ export function TicketPreview({ sale }: Props) {
       <h2 className="text-xl font-bold mb-2 text-center">Ticket #{sale.ticket_id || sale.id}</h2>
       <div className="mb-2 text-center text-zinc-500 text-sm">{sale.created_at ? formatDate(sale.created_at) : ''}</div>
       <div className="mb-4">
-        {(sale.items || sale.products || []).map((item) => (
+        {(sale.products || []).map((item: import('../types/sale').SaleProduct) => (
           <div key={item.id} className="flex justify-between">
             <span>{item.name} x{item.quantity}</span>
             <span>{formatCurrency(item.price * item.quantity)}</span>

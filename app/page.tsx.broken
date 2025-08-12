@@ -30,7 +30,6 @@ import { Modal } from '../components/Modal';
 import { TicketPreview } from '../components/TicketPreview';
 
 
-// ...existing code...
 
 
 type ViewType = 'home' | 'admin' | 'sales' | 'reports' | 'stats' | 'shortcuts' | 'help';

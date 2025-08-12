@@ -55,7 +55,6 @@ export async function applyDatabaseConstraints() {
     }
     
     // 3. Aplicar restricción única
-    console.log('🔧 Aplicando restricción única...');
     
     const constraintSQL = `
       ALTER TABLE sales 
@@ -67,12 +66,10 @@ export async function applyDatabaseConstraints() {
       .rpc('exec_sql', { query: constraintSQL });
       
     if (alterError) {
-      console.error('❌ Error aplicando restricción:', alterError);
       return { success: false, message: alterError.message };
     }
     
     // 4. Crear índice para mejor rendimiento
-    console.log('📊 Creando índice optimizado...');
     
     const indexSQL = `
       CREATE INDEX IF NOT EXISTS idx_sales_stripe_payment_intent_id 
@@ -83,17 +80,11 @@ export async function applyDatabaseConstraints() {
     const { error: indexError } = await supabaseAdmin
       .rpc('exec_sql', { query: indexSQL });
       
-    if (indexError) {
-      console.warn('⚠️ Error creando índice:', indexError);
-    } else {
-      console.log('✅ Índice creado exitosamente');
-    }
+  // ...existing code...
     
-    console.log('🎉 Restricciones aplicadas exitosamente');
     return { success: true, message: 'Restricciones aplicadas correctamente' };
     
   } catch (error) {
-    console.error('❌ Error aplicando restricciones:', error);
     return { success: false, message: `Error: ${error}` };
   }
 }

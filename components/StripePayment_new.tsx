@@ -117,12 +117,10 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
         setPaymentStatus('completed');
         setIsPolling(false);
         
-        // Si es un pago QR, enviar evento personalizado al componente padre (solo una vez)
+        // Si es un pago QR, enviar evento personalizado y actualizar comisión
         if (showQR && !isProcessed) {
           console.log('🎫 Pago QR completado - Enviando evento personalizado...');
           setIsProcessed(true); // Marcar como procesado inmediatamente
-          
-          // Enviar evento personalizado que será capturado por el listener en page.tsx
           setTimeout(() => {
             const qrEvent = new CustomEvent('qr-payment-completed', {
               detail: {
@@ -135,6 +133,27 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
             window.dispatchEvent(qrEvent);
             console.log('✅ Evento QR personalizado enviado exitosamente');
           }, 500);
+
+          // Llamar al endpoint para actualizar la comisión
+          if (currentUser && sessionId && amount) {
+            fetch('/api/stripe-connect/process-commission', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: currentUser.id,
+                saleAmount: amount,
+                customerEmail: currentUser.email,
+                stripeSessionId: sessionId
+              })
+            })
+              .then(res => res.json())
+              .then(data => {
+                console.log('✅ Comisión QR actualizada:', data);
+              })
+              .catch(err => {
+                console.error('❌ Error actualizando comisión QR:', err);
+              });
+          }
         } else if (showQR && isProcessed) {
           console.log('⚠️ Pago QR ya procesado, evitando evento duplicado');
         } else {
@@ -370,6 +389,15 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                 </div>
               ))}
             </div>
+            {/* Mostrar descuento si existe */}
+            {discountAmount && discountAmount > 0 && (
+              <div className="flex justify-between text-sm mt-2">
+                <span className={getThemeClass({dark: 'text-green-300', light: 'text-green-700'})}>
+                  Descuento:
+                </span>
+                <span className="text-green-500">- ${discountAmount.toLocaleString('en-US')} USD</span>
+              </div>
+            )}
             <hr className={`my-3 ${getThemeClass({dark: 'border-zinc-600', light: 'border-gray-300'})}`} />
             <div className="flex justify-between items-center text-xl font-bold">
               <span className={getThemeClass({dark: 'text-white', light: 'text-gray-900'})}>Total:</span>

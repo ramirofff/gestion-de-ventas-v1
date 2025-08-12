@@ -6,7 +6,6 @@ export async function getCommissionRateByUserId(userId: string): Promise<number>
     .eq('user_id', userId)
     .single();
   if (error || !data) {
-    console.warn('No se encontró commission_rate, usando 0.05 por defecto', error?.message);
     return 0.05;
   }
   return typeof data.commission_rate === 'number' ? data.commission_rate : parseFloat(data.commission_rate) || 0.05;
@@ -41,15 +40,12 @@ export interface ClientAccountData {
 // 🏗️ CREAR SUBCUENTA PARA CLIENTE ARGENTINO
 export async function createConnectedAccount(clientData: ClientAccountData): Promise<ConnectedAccount> {
   try {
-    console.log('🇦🇷 Creando subcuenta para cliente:', clientData.email);
 
     // IMPORTANTE: Argentina no soporta card_payments directamente
     // Estrategia: Crear cuenta "virtual" solo para tracking de comisiones
     // Los pagos se procesarán en tu cuenta principal de USA y se harán transfers
     
     if (clientData.country === 'AR') {
-      console.log('🚨 NOTA: Argentina no soporta procesamiento directo de pagos');
-      console.log('💡 Se creará una cuenta virtual para tracking de comisiones');
       
       // Para Argentina, crear una entrada en la base de datos sin cuenta real de Stripe
       // Los pagos se procesarán en la cuenta principal y se calcularan comisiones
@@ -93,7 +89,6 @@ export async function createConnectedAccount(clientData: ClientAccountData): Pro
       },
     });
 
-    console.log('✅ Subcuenta real creada:', account.id);
 
     return {
       id: account.id,
@@ -105,7 +100,6 @@ export async function createConnectedAccount(clientData: ClientAccountData): Pro
     };
 
   } catch (error) {
-    console.error('❌ Error creando subcuenta:', error);
     throw new Error(`Error al crear cuenta conectada: ${error instanceof Error ? error.message : 'Error desconocido'}`);
   }
 }
@@ -115,7 +109,6 @@ export async function createOnboardingLink(accountId: string): Promise<string> {
   try {
     // Si es una cuenta virtual de Argentina, no necesita onboarding
     if (accountId.startsWith('ar_virtual_')) {
-      console.log('🇦🇷 Cuenta virtual de Argentina - no requiere onboarding');
       return '#onboarding-complete'; // Retornar un link dummy
     }
 
@@ -128,7 +121,6 @@ export async function createOnboardingLink(accountId: string): Promise<string> {
 
     return accountLink.url;
   } catch (error) {
-    console.error('❌ Error creando link de onboarding:', error);
     throw error;
   }
 }
@@ -156,14 +148,9 @@ export async function createPaymentWithCommission({
   userId?: string; // Agregar tipo para userId
 }) {
   try {
-    const commissionAmount = Math.round(amount * commissionRate);
-    const netAmount = amount - commissionAmount;
+  const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
+  const netAmount = Math.round((amount - commissionAmount) * 100) / 100;
 
-    console.log('💰 Creando pago con comisión:');
-    console.log(`- Total: $${amount} ${currency.toUpperCase()}`);
-    console.log(`- Comisión: $${commissionAmount} ${currency.toUpperCase()}`);
-    console.log(`- Cliente recibe: $${netAmount} ${currency.toUpperCase()}`);
-    console.log(`- Tipo: ${isQRPayment ? 'QR Payment' : 'Direct Link'}`);
 
     // Determinar URLs según el tipo de pago
     const successUrl = isQRPayment 
@@ -173,7 +160,6 @@ export async function createPaymentWithCommission({
   const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/cancel`;
     // Para cuentas virtuales de Argentina, procesar el pago sin transfer automático
     if (connectedAccountId.startsWith('ar_virtual_')) {
-      console.log('🇦🇷 Procesando pago para cuenta virtual Argentina');
       
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
@@ -237,7 +223,6 @@ export async function createPaymentWithCommission({
 
     return session;
   } catch (error) {
-    console.error('❌ Error creando pago con comisión:', error);
     throw error;
   }
 }
@@ -269,7 +254,6 @@ export async function getAccountInfo(accountId: string): Promise<ConnectedAccoun
       payouts_enabled: account.payouts_enabled,
     };
   } catch (error) {
-    console.error('❌ Error obteniendo info de cuenta:', error);
     throw error;
   }
 }
@@ -290,7 +274,6 @@ export async function getTransferHistory(accountId: string, limit = 10) {
       status: 'completed', // Los transfers siempre están completados cuando aparecen aquí
     }));
   } catch (error) {
-    console.error('❌ Error obteniendo transferencias:', error);
     throw error;
   }
 }
@@ -305,14 +288,6 @@ export async function saveClientAccount(clientData: {
   commissionRate: number;
 }) {
   try {
-    console.log('💾 Guardando cuenta en Supabase:', {
-      userId: clientData.userId,
-      stripeAccountId: clientData.stripeAccountId,
-      email: clientData.email,
-      businessName: clientData.businessName,
-      country: clientData.country
-    });
-
     const { data, error } = await supabaseAdmin
       .from('connected_accounts')
       .insert([{
@@ -322,28 +297,18 @@ export async function saveClientAccount(clientData: {
         business_name: clientData.businessName,
         country: clientData.country,
         commission_rate: clientData.commissionRate,
-        status: clientData.country === 'AR' ? 'active' : 'pending', // Argentina activa automáticamente
-        details_submitted: clientData.country === 'AR', // Argentina no requiere onboarding
-        charges_enabled: clientData.country !== 'AR', // Solo países con Stripe real
+        status: clientData.country === 'AR' ? 'active' : 'pending',
+        details_submitted: clientData.country === 'AR',
+        charges_enabled: clientData.country !== 'AR',
         payouts_enabled: true,
         onboarding_completed: clientData.country === 'AR',
         created_at: new Date().toISOString(),
       }]);
-
     if (error) {
-      console.error('❌ Error detallado de Supabase:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
       throw error;
     }
-    
-    console.log('✅ Cuenta guardada exitosamente en Supabase');
     return data;
   } catch (error) {
-    console.error('❌ Error guardando cliente:', error);
     throw error;
   }
 }
