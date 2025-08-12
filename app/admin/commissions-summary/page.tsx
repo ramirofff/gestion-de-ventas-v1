@@ -160,78 +160,81 @@ export default function CommissionsSummaryPage() {
                   )}
                   {/* Forzar renderizado de la tabla aunque commissions esté vacío */}
                   <h2 className="text-2xl font-bold mb-2">Comisiones de {selectedUser.business_name}</h2>
-                  <button
-                    onClick={exportCSV}
-                    className="mb-4 px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700"
-                  >Exportar CSV</button>
-                  {/* Botón para limpiar registros facturados */}
-                  <button
-                    onClick={async () => {
-                      if (!window.confirm('¿Seguro que quieres eliminar los registros marcados como "facturado" para este usuario?')) return;
-                      const { error } = await supabase
-                        .from('commission_sales')
-                        .delete()
-                        .eq('connected_account_id', selectedUser.id)
-                        .eq('status', 'facturado');
-                      if (error) {
-                        alert('Error al eliminar registros: ' + error.message);
-                      } else {
-                        alert('Registros facturados eliminados.');
-                        // Refrescar comisiones
-                        const { data } = await supabase
+                  <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                    <button
+                      onClick={exportCSV}
+                      className="px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm w-full sm:w-auto"
+                    >Exportar CSV</button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('¿Seguro que quieres eliminar los registros marcados como "facturado" para este usuario?')) return;
+                        const { error } = await supabase
                           .from('commission_sales')
-                          .select('id, amount_total, commission_amount, net_amount, product_name, created_at, status, currency')
+                          .delete()
                           .eq('connected_account_id', selectedUser.id)
-                          .order('created_at', { ascending: false });
-                        const fixed = (data || []).map((c: any) => ({
-                          ...c,
-                          amount_total: c.amount_total !== undefined ? Number(c.amount_total) : 0,
-                          commission_amount: c.commission_amount !== undefined ? Number(c.commission_amount) : 0,
-                          net_amount: c.net_amount !== undefined ? Number(c.net_amount) : 0,
-                        }));
-                        setCommissions(fixed);
-                      }
-                    }}
-                    className="mb-4 ml-2 px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                  >Limpiar registros facturados</button>
-                  {loading ? (
-                    <div className="mt-8">Cargando...</div>
-                  ) : error ? (
-                    <div className="mt-8 text-red-400">Error: {error}</div>
-                  ) : (
-                    <table className="w-full mt-4 border-collapse">
-                      <thead>
-                        <tr className={theme === 'dark' ? 'bg-zinc-800' : 'bg-gray-200'}>
-                          <th className="p-2 border-b text-left align-middle font-semibold text-sm border-zinc-700 dark:border-zinc-700">Fecha</th>
-                          <th className="p-2 border-b text-left align-middle font-semibold text-sm border-zinc-700 dark:border-zinc-700">Producto</th>
-                          <th className="p-2 border-b text-right align-middle font-semibold text-sm border-zinc-700 dark:border-zinc-700">Monto Total</th>
-                          <th className="p-2 border-b text-right align-middle font-semibold text-sm border-zinc-700 dark:border-zinc-700">Comisión</th>
-                          <th className="p-2 border-b text-right align-middle font-semibold text-sm border-zinc-700 dark:border-zinc-700">Net</th>
-                          <th className="p-2 border-b text-center align-middle font-semibold text-sm border-zinc-700 dark:border-zinc-700">Moneda</th>
-                          <th className="p-2 border-b text-center align-middle font-semibold text-sm border-zinc-700 dark:border-zinc-700">Estado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {commissions.filter(c => c.status !== 'pending').length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="p-2 text-center text-yellow-500">No hay comisiones registradas para este usuario.</td>
+                          .eq('status', 'facturado');
+                        if (error) {
+                          alert('Error al eliminar registros: ' + error.message);
+                        } else {
+                          alert('Registros facturados eliminados.');
+                          // Refrescar comisiones
+                          const { data } = await supabase
+                            .from('commission_sales')
+                            .select('id, amount_total, commission_amount, net_amount, product_name, created_at, status, currency')
+                            .eq('connected_account_id', selectedUser.id)
+                            .order('created_at', { ascending: false });
+                          const fixed = (data || []).map((c: any) => ({
+                            ...c,
+                            amount_total: c.amount_total !== undefined ? Number(c.amount_total) : 0,
+                            commission_amount: c.commission_amount !== undefined ? Number(c.commission_amount) : 0,
+                            net_amount: c.net_amount !== undefined ? Number(c.net_amount) : 0,
+                          }));
+                          setCommissions(fixed);
+                        }
+                      }}
+                      className="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 text-sm w-full sm:w-auto"
+                    >Limpiar registros facturados</button>
+                  </div>
+                  <div className="w-full overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900 dark:bg-zinc-900">
+                    {loading ? (
+                      <div className="mt-8">Cargando...</div>
+                    ) : error ? (
+                      <div className="mt-8 text-red-400">Error: {error}</div>
+                    ) : (
+                      <table className="min-w-[600px] w-full text-xs sm:text-sm border-collapse">
+                        <thead>
+                          <tr className={theme === 'dark' ? 'bg-zinc-800' : 'bg-gray-200'}>
+                            <th className="p-2 border-b text-left align-middle font-semibold border-zinc-700 dark:border-zinc-700 whitespace-nowrap">Fecha</th>
+                            <th className="p-2 border-b text-left align-middle font-semibold border-zinc-700 dark:border-zinc-700 whitespace-nowrap">Producto</th>
+                            <th className="p-2 border-b text-right align-middle font-semibold border-zinc-700 dark:border-zinc-700 whitespace-nowrap">Monto Total</th>
+                            <th className="p-2 border-b text-right align-middle font-semibold border-zinc-700 dark:border-zinc-700 whitespace-nowrap">Comisión</th>
+                            <th className="p-2 border-b text-right align-middle font-semibold border-zinc-700 dark:border-zinc-700 whitespace-nowrap">Net</th>
+                            <th className="p-2 border-b text-center align-middle font-semibold border-zinc-700 dark:border-zinc-700 whitespace-nowrap">Moneda</th>
+                            <th className="p-2 border-b text-center align-middle font-semibold border-zinc-700 dark:border-zinc-700 whitespace-nowrap">Estado</th>
                           </tr>
-                        ) : (
-                          commissions.filter(c => c.status !== 'pending').map(c => (
-                            <tr key={c.id} className={theme === 'dark' ? 'odd:bg-zinc-900 even:bg-zinc-800' : 'odd:bg-white even:bg-gray-100'}>
-                              <td className="p-2 text-left align-middle">{new Date(c.created_at).toLocaleString()}</td>
-                              <td className="p-2 text-left align-middle">{c.product_name}</td>
-                              <td className="p-2 text-right align-middle">${Number(c.amount_total).toFixed(2)}</td>
-                              <td className="p-2 text-right align-middle text-green-600 dark:text-green-400">${Number(c.commission_amount).toFixed(2)}</td>
-                              <td className="p-2 text-right align-middle">${Number(c.net_amount).toFixed(2)}</td>
-                              <td className="p-2 text-center align-middle">{c.currency}</td>
-                              <td className="p-2 text-center align-middle">{c.status}</td>
+                        </thead>
+                        <tbody>
+                          {commissions.filter(c => c.status !== 'pending').length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="p-2 text-center text-yellow-500">No hay comisiones registradas para este usuario.</td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  )}
+                          ) : (
+                            commissions.filter(c => c.status !== 'pending').map(c => (
+                              <tr key={c.id} className={theme === 'dark' ? 'odd:bg-zinc-900 even:bg-zinc-800' : 'odd:bg-white even:bg-gray-100'}>
+                                <td className="p-2 text-left align-middle whitespace-nowrap">{new Date(c.created_at).toLocaleString()}</td>
+                                <td className="p-2 text-left align-middle whitespace-nowrap max-w-[120px] truncate">{c.product_name}</td>
+                                <td className="p-2 text-right align-middle whitespace-nowrap">${Number(c.amount_total).toFixed(2)}</td>
+                                <td className="p-2 text-right align-middle text-green-600 dark:text-green-400 whitespace-nowrap">${Number(c.commission_amount).toFixed(2)}</td>
+                                <td className="p-2 text-right align-middle whitespace-nowrap">${Number(c.net_amount).toFixed(2)}</td>
+                                <td className="p-2 text-center align-middle whitespace-nowrap">{c.currency}</td>
+                                <td className="p-2 text-center align-middle whitespace-nowrap">{c.status}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
