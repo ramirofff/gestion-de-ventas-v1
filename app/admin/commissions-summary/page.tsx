@@ -272,32 +272,43 @@ export default function CommissionsSummaryPage() {
               )}
               {/* Forzar renderizado de la tabla aunque commissions esté vacío */}
               <h2 className="text-2xl font-bold mb-2">Comisiones de {selectedUser.business_name}</h2>
-              <div className="w-full overflow-x-auto overflow-y-auto rounded border bg-white shadow" style={{ minHeight: 0, maxHeight: '60dvh', WebkitOverflowScrolling: 'touch' }}>
+              <div
+                className={`w-full rounded border shadow ${theme === 'dark' ? 'bg-zinc-900' : 'bg-white'}`}
+                style={{
+                  overflowX: 'auto',
+                  overflowY: 'auto',
+                  minHeight: 0,
+                  maxHeight: '80vh',
+                  WebkitOverflowScrolling: 'touch',
+                  touchAction: 'pan-x pan-y',
+                  overscrollBehavior: 'contain',
+                }}
+              >
                 <table className="min-w-[600px] w-full text-sm">
-                  <thead className="bg-gray-100 sticky top-0 z-10">
+                  <thead className={theme === 'dark' ? 'bg-zinc-800 text-blue-100 sticky top-0 z-10' : 'bg-gray-100 sticky top-0 z-10'}>
                     <tr>
-                      <th className="p-2 border-b">Producto</th>
-                      <th className="p-2 border-b">Fecha</th>
-                      <th className="p-2 border-b">Monto Total</th>
-                      <th className="p-2 border-b">Comisión</th>
-                      <th className="p-2 border-b">Neto</th>
-                      <th className="p-2 border-b">Moneda</th>
-                      <th className="p-2 border-b">Estado</th>
+                      <th className="p-2 border-b border-zinc-700">Producto</th>
+                      <th className="p-2 border-b border-zinc-700">Fecha</th>
+                      <th className="p-2 border-b border-zinc-700">Monto Total</th>
+                      <th className="p-2 border-b border-zinc-700">Comisión</th>
+                      <th className="p-2 border-b border-zinc-700">Neto</th>
+                      <th className="p-2 border-b border-zinc-700">Moneda</th>
+                      <th className="p-2 border-b border-zinc-700">Estado</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className={theme === 'dark' ? 'text-blue-100' : ''}>
                     {commissions.length === 0 ? (
                       <tr><td colSpan={7} className="text-center p-4 text-zinc-400">No hay comisiones para este usuario.</td></tr>
                     ) : (
                       commissions.map((c) => (
-                        <tr key={c.id} className="hover:bg-gray-50">
-                          <td className="p-2 border-b">{c.product_name}</td>
-                          <td className="p-2 border-b">{new Date(c.created_at).toLocaleString()}</td>
-                          <td className="p-2 border-b text-right">${c.amount_total.toFixed(2)}</td>
-                          <td className="p-2 border-b text-right">${c.commission_amount.toFixed(2)}</td>
-                          <td className="p-2 border-b text-right">${c.net_amount.toFixed(2)}</td>
-                          <td className="p-2 border-b text-center">{c.currency}</td>
-                          <td className="p-2 border-b text-center">{c.status}</td>
+                        <tr key={c.id} className={theme === 'dark' ? 'hover:bg-zinc-800' : 'hover:bg-gray-50'}>
+                          <td className="p-2 border-b border-zinc-700">{c.product_name}</td>
+                          <td className="p-2 border-b border-zinc-700">{new Date(c.created_at).toLocaleString()}</td>
+                          <td className="p-2 border-b border-zinc-700 text-right">${c.amount_total.toFixed(2)}</td>
+                          <td className="p-2 border-b border-zinc-700 text-right">${c.commission_amount.toFixed(2)}</td>
+                          <td className="p-2 border-b border-zinc-700 text-right">${c.net_amount.toFixed(2)}</td>
+                          <td className="p-2 border-b border-zinc-700 text-center">{c.currency}</td>
+                          <td className="p-2 border-b border-zinc-700 text-center">{c.status}</td>
                         </tr>
                       ))
                     )}
