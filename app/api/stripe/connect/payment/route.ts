@@ -27,6 +27,9 @@ export async function POST(req: NextRequest) {
   const feeAmount = Math.round(amount * commissionRate); // En centavos
   const clientReceives = amount - feeAmount;
 
+  // LOG extra para debug
+  console.log('🔎 [DEBUG] user_id recibido:', user_id);
+  console.log('🔎 [DEBUG] commission_rate obtenido:', commissionRate);
   console.log(`💰 Pago: $${amount/100} | Comisión: $${feeAmount/100} (${(commissionRate*100).toFixed(2)}%) | Cliente recibe: $${clientReceives/100}`);
 
     // 2. Crear Stripe Customer o usar existente
