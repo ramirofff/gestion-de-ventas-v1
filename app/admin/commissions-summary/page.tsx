@@ -152,25 +152,35 @@ export default function CommissionsSummaryPage() {
   }
 
   return (
-  <div className={theme === 'dark' ? 'min-h-screen bg-zinc-950 text-white' : 'min-h-screen bg-white text-zinc-900'} style={{padding: 32}}>
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
+    <div className={theme === 'dark' ? 'min-h-screen bg-zinc-950 text-white' : 'min-h-screen bg-white text-zinc-900'} style={{ padding: 8 }}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
           <a href="/" className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-900">← Volver al Home</a>
-          <h1 className="text-3xl font-bold">Panel de Comisiones</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">Panel de Comisiones</h1>
           <button
             onClick={() => window.location.reload()}
-            className="ml-4 px-4 py-2 rounded bg-zinc-700 text-white hover:bg-zinc-800 border border-zinc-900"
+            className="px-4 py-2 rounded bg-zinc-700 text-white hover:bg-zinc-800 border border-zinc-900"
           >Recargar</button>
         </div>
-        <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="px-4 py-2 rounded bg-zinc-800 text-white hover:bg-zinc-700 border border-zinc-700"
-        >
-          {theme === 'dark' ? '☀️ Tema Claro' : '🌙 Tema Oscuro'}
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto justify-end">
+          <a
+            href="https://gestion-de-ventas-v1.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 rounded bg-purple-700 text-white hover:bg-purple-800 border border-purple-900"
+          >Ir a la WebApp</a>
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="px-4 py-2 rounded bg-zinc-800 text-white hover:bg-zinc-700 border border-zinc-700"
+          >
+            {theme === 'dark' ? '☀️ Tema Claro' : '🌙 Tema Oscuro'}
+          </button>
+        </div>
       </div>
-      <div className="flex gap-8">
-        <div className="w-80">
+
+      {/* Responsive: usuarios conectados arriba en mobile, a la izquierda en desktop */}
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="w-full lg:w-80 mb-4 lg:mb-0">
           <h2 className="text-xl font-semibold mb-4">Usuarios conectados</h2>
           <ul className="space-y-2">
             {users.map(u => (
@@ -187,8 +197,8 @@ export default function CommissionsSummaryPage() {
             ))}
           </ul>
         </div>
-            <div className="flex-1">
-              {selectedUser && (
+        <div className="flex-1 min-w-0">
+          {selectedUser && (
                 <div className="mb-6">
                   {/* Mostrar y editar comisión actual */}
                   <div className="mb-4 p-4 rounded flex flex-col gap-2 bg-zinc-900 text-blue-100 border border-zinc-700 shadow-sm">
@@ -303,7 +313,7 @@ export default function CommissionsSummaryPage() {
                       className="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 text-sm w-full sm:w-auto"
                     >Limpiar registros facturados</button>
                   </div>
-                  <div className="w-full overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900 dark:bg-zinc-900">
+                  <div className="w-full overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900 dark:bg-zinc-900 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-900">
                     {loading ? (
                       <div className="mt-8">Cargando...</div>
                     ) : error ? (
