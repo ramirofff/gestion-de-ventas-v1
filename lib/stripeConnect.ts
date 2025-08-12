@@ -1,3 +1,15 @@
+// Obtener commission_rate de connected_accounts por id (connected_account_id)
+export async function getCommissionRateByAccountId(accountId: string): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('connected_accounts')
+    .select('commission_rate')
+    .eq('id', accountId)
+    .single();
+  if (error || !data) {
+    return 0.05;
+  }
+  return typeof data.commission_rate === 'number' ? data.commission_rate : parseFloat(data.commission_rate) || 0.05;
+}
 // Obtener commission_rate de connected_accounts por user_id
 export async function getCommissionRateByUserId(userId: string): Promise<number> {
   const { data, error } = await supabaseAdmin

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { getCommissionRateByUserId } from '../../../../../lib/stripeConnect';
+import { getCommissionRateByAccountId } from '../../../../../lib/stripeConnect';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-07-30.basil',
@@ -16,19 +16,19 @@ export async function POST(req: NextRequest) {
       product_name,
       user_id,
       user_email,
-      stripe_account_id
+      connected_account_id
     } = body;
 
     console.log('💳 Creando pago con Connect para:', user_email);
 
 
-  // 1. Obtener comisión dinámica desde connected_accounts
-  const commissionRate = await getCommissionRateByUserId(user_id);
+  // 1. Obtener comisión dinámica desde connected_accounts usando connected_account_id
+  const commissionRate = await getCommissionRateByAccountId(connected_account_id);
   const feeAmount = Math.round(amount * commissionRate); // En centavos
   const clientReceives = amount - feeAmount;
 
   // LOG extra para debug
-  console.log('🔎 [DEBUG] user_id recibido:', user_id);
+  console.log('🔎 [DEBUG] connected_account_id recibido:', connected_account_id);
   console.log('🔎 [DEBUG] commission_rate obtenido:', commissionRate);
   console.log(`💰 Pago: $${amount/100} | Comisión: $${feeAmount/100} (${(commissionRate*100).toFixed(2)}%) | Cliente recibe: $${clientReceives/100}`);
 
@@ -71,9 +71,9 @@ export async function POST(req: NextRequest) {
       cancel_url: `${req.nextUrl.origin}/?cancelled=true`,
       payment_intent_data: {
         application_fee_amount: feeAmount,
-        on_behalf_of: stripe_account_id,
+        on_behalf_of: connected_account_id,
         transfer_data: {
-          destination: stripe_account_id,
+          destination: connected_account_id,
         },
         metadata: {
           user_id: user_id,
@@ -84,8 +84,8 @@ export async function POST(req: NextRequest) {
       },
       metadata: {
         user_id: user_id,
-        stripe_account_id: stripe_account_id,
-  commission_amount: feeAmount.toString(),
+        connected_account_id: connected_account_id,
+        commission_amount: feeAmount.toString(),
       }
     });
 
