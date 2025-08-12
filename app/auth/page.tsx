@@ -7,7 +7,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 
 export default function AuthPage() {
   const router = useRouter();
-  const { theme, getThemeClass } = useTheme();
+  const { theme, getThemeClass, setTheme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -15,7 +15,7 @@ export default function AuthPage() {
   const [success, setSuccess] = useState("");
   const [view, setView] = useState<"login" | "register">("login");
 
-  // Limpiar sesión inválida al cargar la página
+  // Limpiar sesión inválida al cargar la página y forzar dark
   useEffect(() => {
     const clearInvalidSession = async () => {
       try {
@@ -29,8 +29,16 @@ export default function AuthPage() {
         console.warn('Error al verificar sesión:', err);
       }
     };
-    
     clearInvalidSession();
+    // Inyectar style global para forzar fondo oscuro en html y body
+    if (typeof window !== 'undefined') {
+      const style = document.createElement('style');
+      style.innerHTML = 'html, body { background: #18181b !important; }';
+      document.head.appendChild(style);
+      return () => {
+        document.head.removeChild(style);
+      };
+    }
   }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -72,34 +80,31 @@ export default function AuthPage() {
   };
 
   return (
-    <main className={`min-h-screen flex items-center justify-center ${getThemeClass({dark: 'bg-zinc-950', light: 'bg-gray-100'})}`}>
-      <div className={`p-8 rounded-xl shadow-2xl w-full max-w-md mx-4 ${getThemeClass({dark: 'bg-zinc-900', light: 'bg-white'})}`}>
+    <main className="min-h-screen flex items-center justify-center" style={{ background: '#18181b', minHeight: '100vh' }}>
+      <div className="p-8 rounded-xl shadow-2xl w-full max-w-md mx-4 bg-zinc-900">
         {/* Icono y header */}
         <div className="text-center mb-6">
-          <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${getThemeClass({dark: 'bg-blue-600', light: 'bg-blue-500'})}`}>
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 bg-blue-600">
             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
             </svg>
           </div>
-          <h1 className={`text-2xl font-bold ${getThemeClass({dark: 'text-white', light: 'text-gray-900'})}`}>
+          <h1 className="text-2xl font-bold text-white">
             Sistema de Pagos
           </h1>
-          <p className={`text-sm ${getThemeClass({dark: 'text-gray-400', light: 'text-gray-600'})}`}>
+          <p className="text-sm text-gray-400">
             {view === "login" ? "Inicia sesión en tu cuenta" : "Crea tu nueva cuenta"}
           </p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
           <div>
-            <label className={`block text-sm font-medium mb-1 ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-700'})}`}>
+            <label className="block text-sm font-medium mb-1 text-gray-300">
               Email
             </label>
             <input
               type="email"
-              className={`w-full rounded-lg px-4 py-3 border transition-colors ${getThemeClass({
-                dark: 'bg-zinc-800 text-white border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500',
-                light: 'bg-white text-gray-900 border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-              })}`}
+              className="w-full rounded-lg px-4 py-3 border transition-colors bg-zinc-800 text-white border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               placeholder="ejemplo@correo.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -108,15 +113,12 @@ export default function AuthPage() {
           </div>
 
           <div>
-            <label className={`block text-sm font-medium mb-1 ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-700'})}`}>
+            <label className="block text-sm font-medium mb-1 text-gray-300">
               Contraseña
             </label>
             <input
               type="password"
-              className={`w-full rounded-lg px-4 py-3 border transition-colors ${getThemeClass({
-                dark: 'bg-zinc-800 text-white border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500',
-                light: 'bg-white text-gray-900 border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-              })}`}
+              className="w-full rounded-lg px-4 py-3 border transition-colors bg-zinc-800 text-white border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               placeholder="••••••••"
               value={password}
               onChange={e => setPassword(e.target.value)}
@@ -125,10 +127,7 @@ export default function AuthPage() {
           </div>
 
           {error && (
-            <div className={`text-red-400 text-sm p-3 rounded-lg border ${getThemeClass({
-              dark: 'bg-red-500/10 border-red-500/20',
-              light: 'bg-red-50 border-red-200'
-            })}`}>
+            <div className="text-red-400 text-sm p-3 rounded-lg border bg-red-500/10 border-red-500/20">
               <div className="flex items-center">
                 <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -139,10 +138,7 @@ export default function AuthPage() {
           )}
 
           {success && (
-            <div className={`text-green-500 text-sm p-4 rounded-lg border ${getThemeClass({
-              dark: 'bg-green-500/10 border-green-500/20',
-              light: 'bg-green-50 border-green-200'
-            })}`}>
+            <div className="text-green-500 text-sm p-4 rounded-lg border bg-green-500/10 border-green-500/20">
               <div className="flex items-start">
                 <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -163,13 +159,13 @@ export default function AuthPage() {
             {loading ? "Procesando..." : view === "login" ? "Iniciar Sesión" : "Crear Cuenta"}
           </button>
 
-          <div className={`text-center text-sm ${getThemeClass({dark: 'text-gray-400', light: 'text-gray-600'})}`}>
+          <div className="text-center text-sm text-gray-400">
             {view === "login" ? (
               <span>
                 ¿No tienes cuenta?{' '}
                 <button 
                   type="button" 
-                  className="text-blue-500 hover:text-blue-600 underline font-medium"
+                  className="text-blue-400 hover:text-blue-500 underline font-medium"
                   onClick={() => setView("register")}
                 >
                   Regístrate aquí
@@ -180,7 +176,7 @@ export default function AuthPage() {
                 ¿Ya tienes cuenta?{' '}
                 <button 
                   type="button" 
-                  className="text-blue-500 hover:text-blue-600 underline font-medium"
+                  className="text-blue-400 hover:text-blue-500 underline font-medium"
                   onClick={() => setView("login")}
                 >
                   Inicia sesión

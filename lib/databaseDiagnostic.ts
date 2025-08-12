@@ -98,7 +98,7 @@ export async function verifyDatabase() {
       const testSale = {
         user_id: user.id,
         products: testItems, // Campo principal JSONB
-        items: testItems,    // Campo adicional JSONB que tienes
+  // ...existing code...
         total: 1,
         subtotal: 1, // Campo requerido en tu esquema
         payment_method: 'cash',
@@ -112,7 +112,15 @@ export async function verifyDatabase() {
         .select();
 
       if (insertError) {
-        results.errors.push(`Inserción test: ${insertError.message}`);
+        let msg = 'Error desconocido';
+        if (insertError.message) {
+          msg = insertError.message;
+        } else if (typeof insertError === 'string') {
+          msg = insertError;
+        } else if (typeof insertError === 'object' && Object.keys(insertError).length > 0) {
+          msg = JSON.stringify(insertError);
+        }
+        results.errors.push(`Inserción test: ${msg}`);
         console.error('Error en inserción de prueba:', insertError);
       } else {
         results.canInsertSales = true;

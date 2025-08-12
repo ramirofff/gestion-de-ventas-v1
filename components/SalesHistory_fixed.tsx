@@ -41,8 +41,7 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
         id: sale.id || sale.ticket_id,
         ticket_id: sale.ticket_id || sale.id,
         created_at: sale.created_at || sale.date || new Date().toISOString(),
-        products: sale.products || sale.items || [],
-        items: sale.items || sale.products || [],
+  products: sale.products || [],
         total: Number(sale.total) || 0,
         subtotal: Number(sale.subtotal) || Number(sale.total) || 0,
         payment_method: sale.payment_method || 'stripe',
@@ -195,7 +194,7 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
                     {sale.created_at ? new Date(sale.created_at).toLocaleTimeString() : 'N/A'}
                   </td>
                   <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-4 py-3"}>
-                    {(sale.products || sale.items || []).length} items
+                    {(sale.products || []).length} items
                   </td>
                   <td className={getThemeClass({dark:'text-green-400',light:'text-green-600'}) + " px-4 py-3 font-bold"}>
                     ${(sale.total || 0).toFixed(2)}
@@ -243,7 +242,7 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
               </div>
               
               <div className="space-y-2 mb-4">
-                {(showTicket.products || showTicket.items || []).map((item: any, index: number) => (
+                {(showTicket.products || []).map((item: any, index: number) => (
                   <div key={index} className="flex justify-between">
                     <span className={getThemeClass({dark:'text-white',light:'text-gray-900'})}>
                       {item.name || 'Producto'} x{item.quantity || 1}

@@ -8,9 +8,9 @@ export interface Sale {
   id: string;
   user_id: string;
   customer_id?: string;
-  client_id?: string; // ID del cliente de la plataforma SaaS
+  // ...existing code...
   products: SaleProduct[]; // Campo principal JSONB
-  items: SaleProduct[];    // Campo adicional JSONB
+  // ...existing code...
   subtotal: number;
   tax_amount?: number;
   discount_amount?: number;

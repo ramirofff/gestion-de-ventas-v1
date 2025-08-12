@@ -114,36 +114,45 @@ async function createSaleAdmin(
     }
 
     // Preparar los productos en el formato que espera la base de datos
+
     const items = cart.map(item => ({
       id: item.id || `temp_${Date.now()}`,
       name: item.name || 'Producto',
       price: item.price || 0,
-      original_price: item.original_price || item.price || 0,
+  original_price: item.original_price ?? (item.price || 0),
       quantity: item.quantity || 1,
       total: ((item.price || 0) * (item.quantity || 1))
     }));
-    
+
+    // Calcular subtotal (sin descuento)
+    const subtotal = items.reduce((sum, item) => sum + ((item.original_price ?? item.price) * (item.quantity || 1)), 0);
+    // El total recibido ya es el monto final con descuento aplicado
+    const discount_amount = subtotal - total;
+
     console.log('📊 DEBUG createSaleAdmin - Datos procesados:', {
       userId,
       itemsCount: items.length,
+      subtotal,
+      discount_amount,
       total,
       firstItem: items[0]
     });
-    
+
     // Preparar el objeto de inserción
     const saleData = {
       user_id: userId,
       products: items,
       items: items,
+      subtotal: subtotal,
+      discount_amount: discount_amount > 0 ? discount_amount : 0,
       total: total,
-      subtotal: total,
       payment_method: stripePaymentIntentId ? 'stripe' : 'cash',
       payment_status: 'completed',
       status: 'completed',
       stripe_payment_intent_id: stripePaymentIntentId || null,
       metadata: metadata || null
     };
-    
+
     console.log('💾 Insertando venta:', saleData);
     
     // Usar supabaseAdmin si está disponible, sino usar el cliente normal

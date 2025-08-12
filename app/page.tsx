@@ -40,6 +40,22 @@ interface HomeProps {
 }
 
 function HomeComponent({ preSelectedClient = null }: HomeProps) {
+  // Estado para el usuario autenticado - Consolidado en una sola variable
+  type LocalUser = { id: string; email?: string };
+  const [user, setUser] = useState<LocalUser | null>(null);
+  // Estado para superusuario (solo una vez)
+  const [isSuperuser, setIsSuperuser] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from('superusers')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+      setIsSuperuser(!!data && !error);
+    })();
+  }, [user]);
   // const searchParams = useSearchParams();
   // const sessionIdParam = searchParams.get('session_id');
 
@@ -219,8 +235,7 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
 
   
   // Estado para el usuario autenticado - Consolidado en una sola variable
-  type LocalUser = { id: string; email?: string };
-  const [user, setUser] = useState<LocalUser | null>(null);
+  
   
   // Control de pagos procesados para evitar duplicados
   const [processedPayments, setProcessedPayments] = useState<Set<string>>(new Set());
@@ -492,7 +507,7 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
           console.log('🔎 Consultando ventas en Supabase para user_id:', user.id);
           const { data, error } = await supabase
             .from('sales')
-            .select('id, total, products, items, subtotal, created_at, ticket_id, user_id')
+            .select('id, user_id, total, created_at, ticket_id, products, subtotal, discount_amount, payment_method, payment_status, stripe_payment_intent_id, status, updated_at, metadata')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
 
@@ -502,12 +517,18 @@ const [stripeConfigured, setStripeConfigured] = useState<boolean>(true); // Hard
             allSales = data.map((sale) => ({
               id: sale.id,
               user_id: sale.user_id,
-              products: sale.products ?? [],
-              items: sale.items ?? sale.products ?? [],
-              total: sale.total ?? 0,
-              subtotal: sale.subtotal ?? sale.total ?? 0,
-              created_at: sale.created_at ?? '',
+              total: Number(sale.total) || 0,
+              created_at: sale.created_at,
               ticket_id: sale.ticket_id,
+              products: sale.products || [],
+              subtotal: Number(sale.subtotal) || 0,
+              discount_amount: Number(sale.discount_amount) || 0,
+              payment_method: sale.payment_method || '',
+              payment_status: sale.payment_status || '',
+              status: sale.status || '',
+              stripe_payment_intent_id: sale.stripe_payment_intent_id,
+              updated_at: sale.updated_at,
+              metadata: sale.metadata,
               source: 'supabase'
             }));
           } else if (error) {
@@ -1192,11 +1213,12 @@ const [ticket, setTicket] = useState<{
             <div className={`${getThemeClass({dark:'bg-gradient-to-br from-purple-900 to-purple-800',light:'bg-gradient-to-br from-purple-50 to-purple-100'})} rounded-2xl p-6 border shadow-lg`}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-purple-600 dark:text-purple-300">ESTE MES</h3>
-                <div className="text-2xl">📅</div>
-              </div>
-              <div className="text-3xl font-bold text-purple-700 dark:text-purple-200">{formatCurrency(totalMes)}</div>
-              <div className="text-sm text-purple-500 mt-1">{ventasMes.length} transacciones</div>
-            </div>
+        <div className="text-2xl">📅</div>
+      </div>
+      <div className="text-3xl font-bold text-purple-700 dark:text-purple-200">{formatCurrency(totalMes)}</div>
+      <div className="text-sm text-purple-500 mt-1">{ventasMes.length} transacciones</div>
+      {/* cierre correcto del bloque, sin div extra */}
+    </div>
 
             <div className={`${getThemeClass({dark:'bg-gradient-to-br from-orange-900 to-orange-800',light:'bg-gradient-to-br from-orange-50 to-orange-100'})} rounded-2xl p-6 border shadow-lg`}>
               <div className="flex items-center justify-between mb-3">
@@ -1825,7 +1847,7 @@ const [ticket, setTicket] = useState<{
                     >
                       +54 9 11 2345-6789
                     </a>
-                    <p className="text-xs text-gray-500 mt-1">Respuesta inmediata</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-300 mt-1">Respuesta inmediata</p>
                   </div>
                   
                   <div className={`p-3 rounded-lg ${getThemeClass({dark:'bg-blue-900/20 border border-blue-800',light:'bg-blue-50 border border-blue-200'})}`}>
@@ -1839,7 +1861,7 @@ const [ticket, setTicket] = useState<{
                     >
                       supporton@gmail.com
                     </a>
-                    <p className="text-xs text-gray-500 mt-1">Respuesta en 24h</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-300 mt-1">Respuesta en 24h</p>
                   </div>
                 </div>
               </div>
@@ -1859,7 +1881,7 @@ const [ticket, setTicket] = useState<{
                           {feat.nombre}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-500">{feat.desc}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-200">{feat.desc}</p>
                     </div>
                   ))}
                 </div>
@@ -1877,17 +1899,17 @@ const [ticket, setTicket] = useState<{
               <div className={`p-4 rounded-lg ${getThemeClass({dark:'bg-indigo-900/20',light:'bg-indigo-50'})}`}>
                 <h4 className="font-bold text-indigo-600 dark:text-indigo-400 mb-2">🚀 Versión</h4>
                 <p className="text-lg font-mono">v1.0.0</p>
-                <p className="text-xs text-gray-500">Sistema POS Profesional</p>
+                <p className="text-xs text-gray-500 dark:text-gray-300">Sistema POS Profesional</p>
               </div>
               <div className={`p-4 rounded-lg ${getThemeClass({dark:'bg-emerald-900/20',light:'bg-emerald-50'})}`}>
                 <h4 className="font-bold text-emerald-600 dark:text-emerald-400 mb-2">🛠️ Estado</h4>
                 <p className="text-lg text-emerald-500 font-bold">● Operativo</p>
-                <p className="text-xs text-gray-500">Todos los sistemas funcionando</p>
+                <p className="text-xs text-gray-500 dark:text-gray-300">Todos los sistemas funcionando</p>
               </div>
               <div className={`p-4 rounded-lg ${getThemeClass({dark:'bg-amber-900/20',light:'bg-amber-50'})}`}>
                 <h4 className="font-bold text-amber-600 dark:text-amber-400 mb-2">📊 Rendimiento</h4>
                 <p className="text-lg text-amber-500 font-bold">Óptimo</p>
-                <p className="text-xs text-gray-500">Sistema optimizado</p>
+                <p className="text-xs text-gray-500 dark:text-gray-300">Sistema optimizado</p>
               </div>
             </div>
           </div>
@@ -1984,6 +2006,17 @@ const [ticket, setTicket] = useState<{
         {/* Botones de navegación y modo */}
         {user && (
           <div className="flex flex-wrap gap-4 mb-10 items-center animate-fade-in">
+            {/* Botón solo para superusuarios */}
+            {isSuperuser && (
+              <a
+                href="/admin/commissions-summary"
+                className={`${btnBase} bg-gradient-to-r from-amber-500 to-yellow-400 text-white border-yellow-500 hover:from-yellow-600 hover:to-yellow-500 transition-transform hover:scale-105`}
+                style={{ textDecoration: 'none' }}
+              >
+                <BarChart2 className="w-6 h-6 text-white" /> Resumen de Comisiones
+              </a>
+            )}
+  // ...eliminado duplicado...
             <button onClick={() => setView('admin')} className={`${btnBase} ${btnAdmin} transition-transform hover:scale-105`}>
               <Boxes className="w-6 h-6 text-green-400" /> Administrar productos
             </button>

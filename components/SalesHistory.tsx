@@ -63,17 +63,18 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
             // Mapear las ventas de Supabase al formato correcto
             allSales = data.map((sale: any) => ({
               id: sale.id,
-              ticket_id: sale.ticket_id,
-              created_at: sale.created_at,
-              products: sale.products || sale.items || [],
-              items: sale.items || sale.products || [],
-              total: Number(sale.total) || 0,
-              subtotal: Number(sale.subtotal) || Number(sale.total) || 0,
-              payment_method: sale.payment_method || 'stripe',
-              payment_status: sale.payment_status || 'completed',
-              status: sale.status || 'completed',
               user_id: sale.user_id,
-              stripe_payment_intent_id: sale.stripe_payment_intent_id, // IMPORTANTE: Mantener el ID de Stripe
+              total: Number(sale.total) || 0,
+              created_at: sale.created_at,
+              ticket_id: sale.ticket_id,
+              products: sale.products || [],
+              subtotal: Number(sale.subtotal) || 0,
+              discount_amount: Number(sale.discount_amount) || 0,
+              payment_method: sale.payment_method || '',
+              payment_status: sale.payment_status || '',
+              status: sale.status || '',
+              stripe_payment_intent_id: sale.stripe_payment_intent_id,
+              updated_at: sale.updated_at,
               metadata: sale.metadata
             }));
           }
@@ -120,8 +121,7 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
             id: localSale.id || localSale.ticket_id || `local-${Date.now()}-${Math.random()}`,
             ticket_id: localSale.ticket_id || localSale.id,
             created_at: localSale.created_at || localSale.date || new Date().toISOString(),
-            products: localSale.products || localSale.items || [],
-            items: localSale.items || localSale.products || [],
+            products: localSale.products || [],
             total: Number(localSale.total) || 0,
             subtotal: Number(localSale.subtotal) || Number(localSale.total) || 0,
             payment_method: localSale.payment_method || 'stripe',
@@ -347,11 +347,11 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
                   </td>
                   <td className={getThemeClass({dark:'text-zinc-200',light:'text-yellow-800'}) + " px-6 py-4"}>
                     <div className="font-semibold">
-                      {(sale.products || sale.items || []).length} items
+                      {(sale.products || []).length} items
                     </div>
                     <div className={getThemeClass({dark:'text-zinc-500',light:'text-yellow-600'}) + " text-xs"}>
-                      {(sale.products || sale.items || []).slice(0, 2).map((item: any, i: number) => item.name || 'Producto').join(', ')}
-                      {(sale.products || sale.items || []).length > 2 && '...'}
+                      {(sale.products || []).slice(0, 2).map((item: any, i: number) => item.name || 'Producto').join(', ')}
+                      {(sale.products || []).length > 2 && '...'}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -483,7 +483,7 @@ export function SalesHistory({ userId, getThemeClass, limit, refreshTrigger }: P
                 {/* Lista de productos */}
                 <div className="space-y-2">
                   <h5 className="font-medium text-gray-900 dark:text-white">Productos:</h5>
-                  {(showTicket.products || showTicket.items || []).map((item: any, index: number) => (
+                  {(showTicket.products || []).map((item: any, index: number) => (
                     <div key={index} className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">{item.name || 'Producto'}</p>
@@ -569,7 +569,7 @@ TICKET: ${showTicket.ticket_id}
 FECHA: ${showTicket.created_at ? new Date(showTicket.created_at).toLocaleString('es-AR') : 'N/A'}
 
 PRODUCTOS:
-${(showTicket.products || showTicket.items || []).map((item: any) => 
+${(showTicket.products || []).map((item: any) => 
   `- ${item.name || 'Producto'}: $${(item.price || 0).toFixed(2)} x${item.quantity || 1} = $${((item.price || 0) * (item.quantity || 1)).toFixed(2)}`
 ).join('\n')}
 

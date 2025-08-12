@@ -5,11 +5,13 @@ import { supabase } from '../lib/supabaseClient';
 import { User } from '@supabase/supabase-js';
 import { LoadingSpinner } from './LoadingSpinner';
 
+
 interface AuthGuardProps {
   children: React.ReactNode;
+  allowedEmails?: string[];
 }
 
-export function AuthGuard({ children }: AuthGuardProps) {
+export function AuthGuard({ children, allowedEmails }: AuthGuardProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
@@ -206,6 +208,18 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Usuario autenticado - mostrar la app directamente (sin header aquí)
+  // Si hay restricción de emails y el usuario no está permitido, mostrar acceso denegado
+  if (allowedEmails && allowedEmails.length > 0 && (!user?.email || !allowedEmails.includes(user.email))) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="text-6xl mb-4">⛔</div>
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Acceso denegado</h1>
+          <p className="text-gray-600">No tienes permisos para ver esta sección.</p>
+        </div>
+      </div>
+    );
+  }
+  // Usuario autenticado y permitido
   return <>{children}</>;
 }

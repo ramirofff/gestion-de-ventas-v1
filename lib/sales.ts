@@ -101,40 +101,49 @@ export async function createSale(
       throw new Error('El total debe ser mayor a 0');
     }
 
+
     // Preparar los productos en el formato que espera la base de datos
     const items = cart.map(item => ({
       id: item.id,
       name: item.name,
       price: item.price,
-      original_price: item.original_price,
+      original_price: item.original_price ?? item.price,
       quantity: item.quantity,
       total: (item.price * item.quantity)
     }));
-    
-    console.log('Guardando venta:', { userId, items, total });
-    
+
+    // Calcular subtotal (sin descuento)
+    const subtotal = items.reduce((sum, item) => sum + ((item.original_price ?? item.price) * item.quantity), 0);
+    // El total recibido ya es el monto final con descuento aplicado
+    const discount_amount = subtotal - total;
+
+    console.log('Guardando venta:', { userId, items, subtotal, discount_amount, total });
+
     // 🔍 DEBUG: Verificar datos antes de insertar
     console.log('📊 DEBUG createSale - Datos de entrada:');
     console.log('- userId:', userId, '(tipo:', typeof userId, ')');
     console.log('- cart.length:', cart.length);
+    console.log('- subtotal:', subtotal);
+    console.log('- discount_amount:', discount_amount);
     console.log('- total:', total, '(tipo:', typeof total, ')');
     console.log('- items procesados:', items);
-    
+
     // Preparar el objeto de inserción según la estructura real de tu tabla
     const saleData = {
       user_id: userId,
-      products: items, // JSONB array con los productos (campo original)
-      items: items,    // JSONB array con los productos (campo adicional que tienes)
+  products: items, // JSONB array con los productos
+  // ...existing code...
+      subtotal: subtotal,
+      discount_amount: discount_amount > 0 ? discount_amount : 0,
       total: total,
-      subtotal: total, // Agregamos subtotal que es requerido en tu esquema
       payment_method: cleanPaymentIntentId ? 'stripe' : 'cash',
       payment_status: 'completed',
       status: 'completed',
-      client_id: clientId || null,
+  // ...existing code...
       stripe_payment_intent_id: cleanPaymentIntentId || null,
       metadata: metadata || null
     };
-    
+
     console.log('Datos a insertar en sales:', saleData);
     console.log('Datos serializados:', JSON.stringify(saleData, null, 2));
     
@@ -222,7 +231,7 @@ export async function createSale(
       console.error('- SaleData completo:', saleData);
       console.error('- UserID válido?', !!saleData.user_id && saleData.user_id.length > 0);
       console.error('- Products array válido?', Array.isArray(saleData.products) && saleData.products.length > 0);
-      console.error('- Items array válido?', Array.isArray(saleData.items) && saleData.items.length > 0);
+  // ...existing code...
       console.error('- Total válido?', typeof saleData.total === 'number' && saleData.total > 0);
       console.error('- Subtotal válido?', typeof saleData.subtotal === 'number' && saleData.subtotal > 0);
       

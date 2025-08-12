@@ -1,0 +1,38 @@
+# instalar en vscode y esten todas las dependencias / bibliotecas
+
+Instala las siguientes dependencias para el proyecto (ejecuta en la terminal de VS Code):
+
+## Dependencias principales (Node.js/Next.js)
+
+npm install next react react-dom
+
+## Stripe
+npm install stripe @stripe/stripe-js
+
+## Supabase
+npm install @supabase/supabase-js
+
+## Utilidades y otras
+npm install axios
+npm install date-fns
+npm install clsx
+npm install zustand
+npm install react-toastify
+npm install @headlessui/react
+npm install @heroicons/react
+
+## Tipado y utilidades para TypeScript
+npm install --save-dev typescript @types/node @types/react @types/react-dom
+
+## Linter y formateo
+npm install --save-dev eslint prettier eslint-config-next
+
+## Si usas Tailwind CSS
+npm install tailwindcss postcss autoprefixer
+
+## Si usas Vercel para deploy
+npm install vercel
+
+---
+
+Asegúrate de tener Node.js >= 18 y VS Code actualizado.

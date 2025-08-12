@@ -43,23 +43,25 @@ export function DatabaseStatus() {
 
 
 
-  if (status.hasErrors) {
+  // Mostrar errores si existen
+  if (status.hasErrors && status.errors.length > 0) {
     return (
-      <div className="database-status errors">
-        <p>Se encontraron errores al verificar la base de datos.</p>
-        <button onClick={() => setStatus(prev => ({ ...prev, showDetails: !prev.showDetails }))}>
-          {status.showDetails ? 'Ocultar detalles' : 'Mostrar detalles'}
-        </button>
-        {status.showDetails && (
-          <ul>
-            {status.errors.map((err, idx) => (
-              <li key={idx}>{err}</li>
-            ))}
-          </ul>
-        )}
+      <div style={{ background: '#ffeaea', color: '#b00020', padding: '1em', borderRadius: 8, margin: '1em 0' }}>
+        <strong>Errores en la base de datos:</strong>
+        <ul style={{ margin: 0, paddingLeft: '1.2em' }}>
+          {status.errors.map((err, i) => (
+            <li key={i} style={{ wordBreak: 'break-all' }}>{err}</li>
+          ))}
+        </ul>
       </div>
     );
   }
 
+  // Si está chequeando, mostrar spinner
+  if (status.checking) {
+    return <LoadingSpinner />;
+  }
+
+  // Si no hay errores ni está chequeando, no mostrar nada
   return null;
 }

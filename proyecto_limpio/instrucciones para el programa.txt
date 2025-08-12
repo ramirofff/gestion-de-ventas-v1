@@ -1,0 +1,43 @@
+# instrucciones para el programa
+
+1. **Configura las claves de Stripe**
+   - Ve a `lib/stripe-config-hardcoded.ts` o tu archivo de configuración.
+   - Reemplaza las claves de ejemplo por tus claves reales de Stripe (test y live):
+     - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+     - `STRIPE_SECRET_KEY`
+     - `STRIPE_ACCOUNT_ID` (si usas una cuenta principal)
+
+2. **Configura las variables de entorno**
+   - Crea un archivo `.env.local` en la raíz del proyecto con:
+     ```
+     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
+     STRIPE_SECRET_KEY=sk_test_xxx
+     STRIPE_ACCOUNT_ID=acct_xxx
+     NEXT_PUBLIC_SUPABASE_URL=...
+     NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+     ```
+   - Completa con tus claves reales de Supabase y Stripe.
+
+3. **Configura Vercel (opcional)**
+   - Si vas a desplegar en Vercel, configura las mismas variables de entorno en el dashboard de Vercel.
+
+4. **Cambia la comisión de venta para cada usuario conectado**
+   - Ve a la tabla `connected_accounts` en Supabase.
+   - Modifica el campo `commission_rate` para el usuario deseado (por defecto es 5%).
+   - Puedes hacerlo desde el panel de Supabase o con un UPDATE SQL:
+     ```sql
+     update connected_accounts set commission_rate = 7.5 where user_id = 'EL_ID_DEL_USUARIO';
+     ```
+
+5. **Otras configuraciones**
+   - Revisa y ajusta los valores en `lib/stripe-config-hardcoded.ts` según tu plataforma (nombre, email de soporte, etc).
+   - Si usas Tailwind, revisa `tailwind.config.js`.
+   - Si usas otras integraciones, revisa sus archivos de configuración.
+
+6. **Prueba el sistema**
+   - Ejecuta `npm run dev` y verifica que todo funcione correctamente en modo desarrollo.
+   - Realiza pruebas de pago en modo test antes de pasar a producción.
+
+---
+
+Para dudas, consulta la documentación interna o contacta al desarrollador principal.

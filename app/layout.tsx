@@ -62,11 +62,18 @@ export const themeColor = [
   { media: "(prefers-color-scheme: dark)", color: "#09090b" }
 ];
 
-export default function RootLayout({
-  children,
-}: {
+import { headers } from "next/headers";
+
+interface RootLayoutProps {
   children: React.ReactNode;
-}) {
+  params: { [key: string]: string | string[] };
+}
+
+export default function RootLayout({ children, params }: RootLayoutProps) {
+  // Detectar si la ruta es /auth usando params
+  const isAuth = Array.isArray(params?.segment)
+    ? params.segment[0] === "auth"
+    : params?.segment === "auth";
   return (
     <html lang="es">
       <head>
@@ -77,7 +84,10 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/favicon.ico" />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased${isAuth ? " dark" : ""}`}
+        style={isAuth ? { background: "#18181b" } : {}}
+      >
         <ThemeProvider>
           <AuthGuard>
             <ProductsProvider>

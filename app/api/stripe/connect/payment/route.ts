@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
+import { getCommissionRateByUserId } from '../../../../../lib/stripeConnect';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-07-30.basil',
 });
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,18 +21,13 @@ export async function POST(req: NextRequest) {
 
     console.log('💳 Creando pago con Connect para:', user_email);
 
-    // 1. Obtener datos del cliente conectado
-    const { data: clientData } = await supabase
-      .from('client_accounts')
-      .select('platform_fee_percent')
-      .eq('user_id', user_id)
-      .single();
 
-    const platformFee = clientData?.platform_fee_percent || 3.0;
-    const feeAmount = Math.round((amount * platformFee) / 100); // En centavos
-    const clientReceives = amount - feeAmount;
+  // 1. Obtener comisión dinámica desde connected_accounts
+  const commissionRate = await getCommissionRateByUserId(user_id);
+  const feeAmount = Math.round(amount * commissionRate); // En centavos
+  const clientReceives = amount - feeAmount;
 
-    console.log(`💰 Pago: $${amount/100} | Fee: $${feeAmount/100} | Cliente recibe: $${clientReceives/100}`);
+  console.log(`💰 Pago: $${amount/100} | Comisión: $${feeAmount/100} (${(commissionRate*100).toFixed(2)}%) | Cliente recibe: $${clientReceives/100}`);
 
     // 2. Crear Stripe Customer o usar existente
     const customers = await stripe.customers.list({ 
@@ -84,14 +75,14 @@ export async function POST(req: NextRequest) {
         metadata: {
           user_id: user_id,
           product_name: product_name || 'Producto/Servicio',
-          platform_fee_percent: platformFee.toString(),
+          commission_rate: commissionRate.toString(),
           client_receives_cents: clientReceives.toString()
         }
       },
       metadata: {
         user_id: user_id,
         stripe_account_id: stripe_account_id,
-        platform_fee_amount: feeAmount.toString()
+  commission_amount: feeAmount.toString(),
       }
     });
 
@@ -101,9 +92,9 @@ export async function POST(req: NextRequest) {
       session_id: session.id,
       payment_details: {
         total_amount: amount / 100,
-        platform_fee: feeAmount / 100,
-        client_receives: clientReceives / 100,
-        fee_percentage: platformFee
+  commission: feeAmount / 100,
+  client_receives: clientReceives / 100,
+  commission_rate: commissionRate
       }
     });
 

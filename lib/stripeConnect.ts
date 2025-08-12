@@ -1,3 +1,16 @@
+// Obtener commission_rate de connected_accounts por user_id
+export async function getCommissionRateByUserId(userId: string): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('connected_accounts')
+    .select('commission_rate')
+    .eq('user_id', userId)
+    .single();
+  if (error || !data) {
+    console.warn('No se encontró commission_rate, usando 0.05 por defecto', error?.message);
+    return 0.05;
+  }
+  return typeof data.commission_rate === 'number' ? data.commission_rate : parseFloat(data.commission_rate) || 0.05;
+}
 // lib/stripeConnect.ts - Gestión de Stripe Connect
 import Stripe from 'stripe';
 import { supabaseAdmin } from './supabaseClient';
