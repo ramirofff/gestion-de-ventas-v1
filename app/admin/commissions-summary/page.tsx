@@ -163,12 +163,6 @@ export default function CommissionsSummaryPage() {
           >Recargar</button>
         </div>
         <div className="flex gap-2 w-full sm:w-auto justify-end">
-          <a
-            href="https://gestion-de-ventas-v1.vercel.app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 rounded bg-purple-700 text-white hover:bg-purple-800 border border-purple-900"
-          >Ir a la WebApp</a>
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             className="px-4 py-2 rounded bg-zinc-800 text-white hover:bg-zinc-700 border border-zinc-700"
@@ -179,8 +173,8 @@ export default function CommissionsSummaryPage() {
       </div>
 
       {/* Responsive: usuarios conectados arriba en mobile, a la izquierda en desktop */}
-      <div className="flex flex-col lg:flex-row gap-8">
-        <div className="w-full lg:w-80 mb-4 lg:mb-0">
+  <div className="flex flex-col lg:flex-row gap-8 h-full min-h-[70vh] overflow-y-auto">
+  <div className="w-full lg:w-80 mb-4 lg:mb-0 flex-shrink-0">
           <h2 className="text-xl font-semibold mb-4">Usuarios conectados</h2>
           <ul className="space-y-2">
             {users.map(u => (
@@ -197,7 +191,7 @@ export default function CommissionsSummaryPage() {
             ))}
           </ul>
         </div>
-        <div className="flex-1 min-w-0">
+  <div className="flex-1 min-w-0">
           {selectedUser && (
                 <div className="mb-6">
                   {/* Mostrar y editar comisión actual */}
