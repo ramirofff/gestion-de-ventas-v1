@@ -265,7 +265,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
         body: JSON.stringify({
           userId: currentUser.id,
           userEmail: currentUser.email,
-          connectedAccountId: statusData.account.id,
+          connected_account_id: statusData.account.id,
           amount: paymentData.amount,
           productName: paymentData.description,
           customerEmail: paymentData.customer_email,
