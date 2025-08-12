@@ -105,7 +105,7 @@ STRIPE_WEBHOOK_SECRET=whsec_tu_webhook_secret_aqui
 STRIPE_EXPRESS_CLIENT_ID=ca_tu_express_client_id_aqui
 
 # App Configuration
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=https://gestion-de-ventas-v1.vercel.app
 ```
 
 ### 2. Configuración Tailwind CSS (tailwind.config.js):

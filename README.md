@@ -73,7 +73,7 @@ STRIPE_SECRET_KEY=your_stripe_secret_key
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [https://gestion-de-ventas-v1.vercel.app](https://gestion-de-ventas-v1.vercel.app) in your browser.
 
 ## 📦 Deployment
 

@@ -114,8 +114,8 @@ export async function createOnboardingLink(accountId: string): Promise<string> {
 
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-  refresh_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/onboarding/refresh`,
-  return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/onboarding/complete`,
+  refresh_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/onboarding/refresh`,
+  return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/onboarding/complete`,
       type: 'account_onboarding',
     });
 
@@ -154,10 +154,10 @@ export async function createPaymentWithCommission({
 
     // Determinar URLs según el tipo de pago
     const successUrl = isQRPayment 
-  ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`
-  : `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/thank-you?session_id={CHECKOUT_SESSION_ID}`;
+  ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`
+  : `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment/thank-you?session_id={CHECKOUT_SESSION_ID}`;
     
-  const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/cancel`;
+  const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment/cancel`;
     // Para cuentas virtuales de Argentina, procesar el pago sin transfer automático
     if (connectedAccountId.startsWith('ar_virtual_')) {
       
