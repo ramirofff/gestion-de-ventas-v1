@@ -46,8 +46,17 @@ export function AdminPanel() {
   
   // Escuchar eventos del formulario
   useEffect(() => {
-    const handleProductAdded = () => {
-      setShowAddForm(false);
+    const handleProductAdded = async () => {
+      try {
+        // Close the add form (if open) and refresh the product list so the new product appears
+        setShowAddForm(false);
+        if (fetchProducts) {
+          await fetchProducts();
+          setPage(1);
+        }
+      } catch (err) {
+        console.error('Error refreshing products after productAdded event:', err);
+      }
     };
     
     const handleCategoryAdded = async (event: Event) => {
@@ -61,13 +70,22 @@ export function AdminPanel() {
         console.log('Nueva categoría detectada en AdminPanel:', customEvent.detail.categoryId);
       }
     };
+
+    const handleProductUpdated = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('Evento productUpdated recibido con datos:', customEvent.detail);
+      // Refetch para que la UI refleje la imagen o cambios aplicados en background
+      if (fetchProducts) await fetchProducts();
+    };
     
     document.addEventListener('productAdded', handleProductAdded);
     document.addEventListener('categoryAdded', handleCategoryAdded);
+    document.addEventListener('productUpdated', handleProductUpdated);
     
     return () => {
       document.removeEventListener('productAdded', handleProductAdded);
       document.removeEventListener('categoryAdded', handleCategoryAdded);
+      document.removeEventListener('productUpdated', handleProductUpdated);
     };
   }, [fetchCategories, fetchProducts]);
 
@@ -132,33 +150,72 @@ setEditData({
     setLoading(false);
   };
   
-  const handleAddProduct = async (data: { name: string; price: number; original_price: number; category: string; image_url: string; }): Promise<{ error?: Error } | undefined> => {
+  const handleAddProduct = async (data: { name: string; price: number; original_price: number; category: string; image_url?: string | null; }): Promise<{ error?: Error; data?: any } | undefined> => {
+    if (!userId) {
+      const e = new Error('Aún no se cargó el usuario. Intentá de nuevo en 1-2 segundos.');
+      setError(e.message);
+      return { error: e };
+    }
     setLoading(true);
     setError(null);
     let insertResult;
     try {
+      // Defensive: ensure numeric fields are valid numbers and within DB limits
+      const priceNum = Number(data.price);
+      const originalPriceNum = Number(data.original_price ?? priceNum);
+      if (isNaN(priceNum) || isNaN(originalPriceNum)) {
+        const e = new Error('Precio inválido. Debe ser un número.');
+        setError(e.message);
+        setLoading(false);
+        return { error: e };
+      }
+
+      // Postgres numeric(10,2) requires abs(value) < 1e8 (100000000). Guardamos esto y mostramos mensaje claro.
+      const MAX_ABS = 1e8;
+      if (Math.abs(priceNum) >= MAX_ABS || Math.abs(originalPriceNum) >= MAX_ABS) {
+        const e = new Error('El precio excede el máximo permitido por la base de datos (debe ser menor a 100000000).');
+        setError(e.message);
+        setLoading(false);
+        return { error: e };
+      }
+
       // Agregar stock infinito automáticamente a todos los productos nuevos
-      const productData = { 
-        ...data, 
+      const productData = {
+        name: data.name,
+        price: priceNum,
+        original_price: originalPriceNum,
+        category: data.category,
+        image_url: data.image_url ?? null,
         user_id: userId,
         stock_quantity: 999999 // Stock infinito automático
       };
-      
-      console.log('📦 Creando producto con stock infinito:', productData.name);
-      insertResult = await supabase.from('products').insert([productData]);
-      
+
+      // Log payload before sending to help debug numeric overflow and similar issues
+      console.log('📦 Creando producto con payload:', productData);
+
+      // Use .select() so Supabase returns the inserted row in .data
+      insertResult = await supabase.from('products').insert([productData]).select();
+
+      // Debug logs para entender fallos de inserción
+      console.log('📥 Resultado de insert:', insertResult);
       if (insertResult.error) {
-        setError(insertResult.error.message);
+        // Provide friendlier message for numeric overflow
+        if ((insertResult.error as any)?.code === '22003' || (insertResult.error as any)?.message?.includes('numeric field overflow')) {
+          setError('Error: uno de los campos numéricos excede el tamaño permitido por la base de datos. Revisa el precio y prueba con un valor menor.');
+        } else {
+          setError(insertResult.error.message);
+        }
         console.error('❌ Error al crear producto:', insertResult.error);
-      } else {
-        console.log('✅ Producto creado con stock infinito');
+      } else if (insertResult.data) {
+        console.log('✅ Producto creado con stock infinito - filas insertadas:', insertResult.data);
+        // devolver la fila creada para permitir actualizaciones optimistas desde el formulario
         await fetchProducts();
         setShowAddForm(false);
       }
-      
+
       await fetchCategories();
       setLoading(false);
-      return { error: insertResult.error as Error | undefined };
+      return { error: insertResult.error as Error | undefined, data: insertResult.data };
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
       setError('Error al guardar el producto: ' + error.message);
@@ -177,87 +234,95 @@ setEditData({
       </div>
       {showAddForm && (
         <div className="mb-6">
-          <AddProductForm categories={categories} onSubmit={handleAddProduct} loading={loading} getThemeClass={getThemeClass} />
+          <AddProductForm categories={categories} onSubmit={handleAddProduct} loading={loading} getThemeClass={getThemeClass} userId={userId} />
         </div>
       )}
-      <div className="mb-4">
-        <CategoryFilter categories={categories} selected={selectedCategory} onSelect={setSelectedCategory} />
-      </div>
-      <div className="overflow-x-auto">
-        <table className={getThemeClass({dark:'min-w-full bg-zinc-800 rounded-xl overflow-hidden',light:'min-w-full bg-yellow-50 rounded-xl overflow-hidden'})}>
-          <thead>
-            <tr className={getThemeClass({dark:'text-zinc-300 text-left',light:'text-yellow-900 text-left'})}>
-              <th className="p-3">Imagen</th>
-              <th className="p-3">Nombre</th>
-              <th className="p-3">Precio</th>
-              <th className="p-3">Precio original</th>
-              <th className="p-3">Categoría</th>
-              <th className="p-3">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedProducts.map((product: Product) => (
-              <tr key={product.id} className={getThemeClass({dark:'border-b border-zinc-700',light:'border-b border-yellow-200'})}>
-                <td className="p-2"><img src={product.image_url} alt={product.name} className="w-14 h-14 object-cover rounded" /></td>
-                <td className="p-2">
-                  {editingId === product.id ? (
-                    <input value={typeof editData.name === 'string' ? editData.name : ''} onChange={e => setEditData({ ...editData, name: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"} />
-                  ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{product.name}</span>}
-                </td>
-                <td className="p-2">
-                  {editingId === product.id ? (
-                    <input type="number" value={typeof editData.price === 'string' || typeof editData.price === 'number' ? editData.price : ''} onChange={e => setEditData({ ...editData, price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
-                  ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{`$${product.price}`}</span>}
-                </td>
-                <td className="p-2">
-                  {editingId === product.id ? (
-                    <input type="number" value={typeof editData.original_price === 'string' || typeof editData.original_price === 'number' ? editData.original_price : ''} onChange={e => setEditData({ ...editData, original_price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
-                  ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{`$${product.original_price}`}</span>}
-                </td>
-                <td className="p-2">
-                  {editingId === product.id ? (
-                    <select value={typeof editData.category === 'string' ? editData.category : ''} onChange={e => setEditData({ ...editData, category: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"}>
-                      {categories.map((cat: Category) => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{categories.find((cat: Category) => cat.id === product.category)?.name || '-'}</span>
-                  )}
-                </td>
-                <td className="p-2 flex gap-2">
-                  {editingId === product.id ? (
-                    <>
-                      <button onClick={saveEdit} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded">Guardar</button>
-                      <button onClick={cancelEdit} className="bg-zinc-600 hover:bg-zinc-700 text-white px-2 py-1 rounded">Cancelar</button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => startEdit(product)} className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">Editar</button>
-                      <button onClick={() => deleteProduct(product.id)} className="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded">Eliminar</button>
-                    </>
-                  )}
-                </td>
-              </tr>
+      {!showAddForm && (
+        <>
+          <CategoryFilter categories={categories} selected={selectedCategory} onSelect={setSelectedCategory} />
+          <div className="overflow-x-auto">
+            <table className={getThemeClass({dark:'min-w-full bg-zinc-800 rounded-xl overflow-hidden',light:'min-w-full bg-yellow-50 rounded-xl overflow-hidden'})}>
+              <thead>
+                <tr className={getThemeClass({dark:'text-zinc-300 text-left',light:'text-yellow-900 text-left'})}>
+                  <th className="p-3">Imagen</th>
+                  <th className="p-3">Nombre</th>
+                  <th className="p-3">Precio</th>
+                  <th className="p-3">Precio original</th>
+                  <th className="p-3">Categoría</th>
+                  <th className="p-3">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedProducts.map((product: Product) => (
+                  <tr key={product.id} className={getThemeClass({dark:'border-b border-zinc-700',light:'border-b border-yellow-200'})}>
+                    <td className="p-2">
+                      {product.image_url ? (
+                        <img src={product.image_url} alt={product.name} className="w-14 h-14 object-cover rounded" />
+                      ) : (
+                        <div className="w-14 h-14 bg-gray-100 dark:bg-zinc-800 rounded flex items-center justify-center text-xs text-gray-500">Sin imagen</div>
+                      )}
+                    </td>
+                    <td className="p-2">
+                      {editingId === product.id ? (
+                        <input value={typeof editData.name === 'string' ? editData.name : ''} onChange={e => setEditData({ ...editData, name: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"} />
+                      ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{product.name}</span>}
+                    </td>
+                    <td className="p-2">
+                      {editingId === product.id ? (
+                        <input type="number" value={typeof editData.price === 'string' || typeof editData.price === 'number' ? editData.price : ''} onChange={e => setEditData({ ...editData, price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
+                      ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{`$${product.price}`}</span>}
+                    </td>
+                    <td className="p-2">
+                      {editingId === product.id ? (
+                        <input type="number" value={typeof editData.original_price === 'string' || typeof editData.original_price === 'number' ? editData.original_price : ''} onChange={e => setEditData({ ...editData, original_price: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded w-20"} />
+                      ) : <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{`$${product.original_price}`}</span>}
+                    </td>
+                    <td className="p-2">
+                      {editingId === product.id ? (
+                        <select value={typeof editData.category === 'string' ? editData.category : ''} onChange={e => setEditData({ ...editData, category: e.target.value })} className={getThemeClass({dark:'bg-zinc-700 text-white',light:'bg-yellow-100 text-zinc-800'}) + " px-2 py-1 rounded"}>
+                          {categories.map((cat: Category) => (
+                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className={getThemeClass({dark:'text-white',light:'text-zinc-800'})}>{categories.find((cat: Category) => cat.id === product.category)?.name || '-'}</span>
+                      )}
+                    </td>
+                    <td className="p-2 flex gap-2">
+                      {editingId === product.id ? (
+                        <>
+                          <button onClick={saveEdit} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded">Guardar</button>
+                          <button onClick={cancelEdit} className="bg-zinc-600 hover:bg-zinc-700 text-white px-2 py-1 rounded">Cancelar</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => startEdit(product)} className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">Editar</button>
+                          <button onClick={() => deleteProduct(product.id)} className="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded">Eliminar</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {error && <div className="text-red-500 mt-2">{error}</div>}
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <div className="flex justify-center gap-2 mt-4">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold disabled:opacity-50">Anterior</button>
+              <span className="px-2 py-1">Página {page} de {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold disabled:opacity-50">Siguiente</button>
+            </div>
+          )}
+          {/* Category delete buttons */}
+          <div className="mt-4 flex gap-2 flex-wrap">
+            {categories.map((cat: Category) => (
+              <button key={cat.id} onClick={() => deleteCategory(cat.id)} className="bg-red-700 hover:bg-red-800 text-white px-3 py-1 rounded text-sm">Eliminar {cat.name}</button>
             ))}
-          </tbody>
-        </table>
-      </div>
-      {error && <div className="text-red-500 mt-2">{error}</div>}
-      {/* Paginación */}
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-4">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold disabled:opacity-50">Anterior</button>
-          <span className="px-2 py-1">Página {page} de {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold disabled:opacity-50">Siguiente</button>
-        </div>
+          </div>
+        </>
       )}
-      {/* Category delete buttons */}
-      <div className="mt-4 flex gap-2 flex-wrap">
-        {categories.map((cat: Category) => (
-          <button key={cat.id} onClick={() => deleteCategory(cat.id)} className="bg-red-700 hover:bg-red-800 text-white px-3 py-1 rounded text-sm">Eliminar {cat.name}</button>
-        ))}
-      </div>
     </div>
   );
 }

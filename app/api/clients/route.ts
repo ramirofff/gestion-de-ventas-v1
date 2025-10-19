@@ -13,10 +13,10 @@ export async function GET(req: NextRequest) {
       platform_fee_percent: client.platform_fee_percent,
       created_at: client.created_at,
       // Generar URLs posibles
-      urls: [
-        `${req.nextUrl.origin}/client/${client.id}`,
-        `${req.nextUrl.origin}/client/${client.business_name.toLowerCase().replace(/\s+/g, '-')}`,
-      ]
+        urls: [
+          `${req.nextUrl.origin}/client/${client.id}`,
+          `${req.nextUrl.origin}/client/${(client.business_name ?? 'sin-nombre').toLowerCase().replace(/\s+/g, '-')}`,
+        ]
     }));
 
     return NextResponse.json({
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       ...client,
       urls: [
         `${req.nextUrl.origin}/client/${client.id}`,
-        `${req.nextUrl.origin}/client/${client.business_name.toLowerCase().replace(/\s+/g, '-')}`,
+        `${req.nextUrl.origin}/client/${(client.business_name ?? 'sin-nombre').toLowerCase().replace(/\s+/g, '-')}`,
       ]
     };
 

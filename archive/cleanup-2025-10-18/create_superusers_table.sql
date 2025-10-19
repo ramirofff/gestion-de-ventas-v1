@@ -1,3 +1,4 @@
+-- ARCHIVADO: Este archivo fue movido aquí por limpieza 2025-10-18
 -- Tabla para superusuarios del sistema
 create table if not exists superusers (
   id uuid primary key references auth.users(id) on delete cascade,

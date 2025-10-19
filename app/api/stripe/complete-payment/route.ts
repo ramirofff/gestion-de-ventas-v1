@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSale } from '../../../../lib/sales';
-import { ClientAccountManager } from '../../../../lib/client-accounts';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+// Importar solo lo necesario, eliminar duplicados y asegurar rutas válidas
 
 // Cliente de Supabase con permisos elevados (service role) - solo si está disponible
 const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY 

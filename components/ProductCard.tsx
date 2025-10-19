@@ -14,7 +14,13 @@ export function ProductCard({ product, onAdd, getThemeClass, categories }: Props
   const catName = categories.find(cat => cat.id === product.category)?.name || 'Sin categoría';
   return (
     <div className={getThemeClass({dark:'bg-zinc-900',light:'bg-yellow-50'}) + " rounded-xl p-4 flex flex-col items-center shadow-lg relative transition-colors border " + getThemeClass({dark:'border-zinc-800',light:'border-yellow-200'})}>
-      <img src={product.image_url} alt={product.name} className="w-32 h-32 object-cover rounded-lg mb-2" />
+      {product.image_url ? (
+        <img src={product.image_url} alt={product.name} className="w-32 h-32 object-cover rounded-lg mb-2" />
+      ) : (
+        <div className="w-32 h-32 bg-gray-100 dark:bg-zinc-800 rounded-lg mb-2 flex items-center justify-center text-sm text-gray-500">
+          Sin imagen
+        </div>
+      )}
       <h3 className={getThemeClass({dark:'text-white',light:'text-yellow-900'}) + " text-lg font-bold mb-1 text-center"}>{product.name}</h3>
       <span className="text-sm text-zinc-500 dark:text-zinc-300 mb-2">{catName}</span>
       <div className="flex items-center gap-2 mb-2">

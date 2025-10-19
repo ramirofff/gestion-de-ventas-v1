@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Category } from '../types/category';
 import { uploadProductImage } from '../lib/uploadImage';
 import { useCategories } from '../hooks/useCategories';
@@ -7,71 +7,41 @@ import { supabase } from '../lib/supabaseClient';
 
 interface Props {
   categories: Category[];
-  onSubmit: (data: { name: string; price: number; original_price: number; category: string; image_url: string }) => Promise<{ error?: Error } | undefined>;
+  onSubmit: (data: { name: string; price: number; original_price: number; category: string; image_url?: string | null }) => Promise<{ error?: Error; data?: any } | undefined>;
   loading?: boolean;
   getThemeClass: (opts: { dark: string; light: string }) => string;
+  userId: string | null;
 }
 
-export function AddProductForm({ categories, onSubmit, loading, getThemeClass }: Props) {
+export function AddProductForm({ categories, onSubmit, loading, getThemeClass, userId }: Props) {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState('');
-  const [image, setImage] = useState<File | null>(null);
+  // useRef para persistir el archivo de imagen aunque el estado se reinicie
+  const imageRef = useRef<File | null>(null);
+  const [image, setImageState] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [infoType, setInfoType] = useState<'success' | 'error' | 'info' | null>(null);
-  
-  // Hook para gestionar categorías
-  const { addCategory, fetchCategories } = useCategories();
-  
-  // Obtener user_id del usuario autenticado
-  const [userId, setUserId] = useState<string | null>(null);
-  
-  // Cargar user_id al montar
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          console.warn('Error al obtener sesión:', sessionError);
-          setUserId(null);
-          return;
-        }
-        
-        if (!session) {
-          console.warn('No hay sesión activa');
-          setUserId(null);
-          return;
-        }
-        
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError) {
-          console.warn('Error al obtener usuario:', userError);
-          setUserId(null);
-          return;
-        }
-        
-        setUserId(user?.id ?? null);
-      } catch (error) {
-        console.warn('Error inesperado al obtener usuario:', error);
-        setUserId(null);
-      }
-    };
-    
-    getUser();
-  }, []);
-  
+  // Guardar la última categoría creada localmente para poder seleccionarla inmediatamente
+  const [lastCreatedCategoryId, setLastCreatedCategoryId] = useState<string | null>(null);
+  // Mostrar input de nueva categoría como bloque debajo del selector
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Hook para gestionar categorías (solo usamos addCategory)
+  const { addCategory } = useCategories();
+
   // Actualizar categoría seleccionada cuando cambien las categorías
   useEffect(() => {
     console.log('Categorías actualizadas:', categories);
     // Solo verificar si la categoría seleccionada aún existe en la lista
     if (category && categories.length > 0) {
       const categoryExists = categories.some(cat => cat.id === category);
-      console.log('¿Categoría actual existe?', categoryExists, 'ID:', category);
-      if (!categoryExists) {
+      console.log('¿Categoría actual existe?', categoryExists, 'ID:', category, 'última creada:', lastCreatedCategoryId);
+      // Si la categoría no existe en la lista pero coincide con la última creada, la permitimos (aún no se propagó la lista)
+      if (!categoryExists && category !== lastCreatedCategoryId) {
         console.log('Categoría no encontrada, sin categoría seleccionada');
         setCategory(''); // Sin categoría por defecto
       }
@@ -80,12 +50,12 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
     if (error === 'No hay categorías disponibles. Crea una categoría primero.') {
       setError(null);
     }
-  }, [categories, category, error]);
+  }, [categories, category, error, lastCreatedCategoryId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+
     // Validaciones
     if (!name.trim()) {
       setError('El nombre es obligatorio.');
@@ -95,155 +65,138 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
       setError('El precio es obligatorio y debe ser un número.');
       return;
     }
-    
+
     // La categoría es opcional, pero si se selecciona debe ser válida
     if (category) {
       // Verificar que la categoría exista en la lista actual
-      const categoryExists = categories.some(cat => cat.id === category);
+      const categoryExists = categories.some(cat => cat.id === category) || category === lastCreatedCategoryId;
       if (!categoryExists) {
         setError('La categoría seleccionada no es válida. Por favor, selecciona otra categoría.');
         return;
       }
     }
-    
+
+    // Optimistic flow: crear primero, luego subir imagen en background y actualizar la fila.
     setUploading(true);
-    let image_url = '';
-    if (image) {
-      try {
-        const url = await uploadProductImage(image);
-        if (!url) {
-          setError('Error al subir la imagen (sin URL).');
-          setUploading(false);
-          return;
-        }
-        image_url = url;
-      } catch (err: unknown) {
-        let msg = 'Error al subir la imagen: ';
-        if (err && typeof err === 'object' && 'message' in err) {
-          msg += (err as { message: string }).message;
-        } else {
-          msg += String(err);
-        }
-        setError(msg);
+    console.log('[AddProductForm] handleSubmit - image currently set?:', !!image, image?.name);
+    try {
+      const fileToUpload = imageRef.current;
+
+      const createResult = await onSubmit({
+        name,
+        price: parseFloat(price),
+        original_price: parseFloat(price),
+        category,
+        image_url: null, // nunca undefined
+      });
+
+      if (createResult && createResult.error) {
+        setError('Error al guardar el producto: ' + createResult.error.message);
+        setInfoMsg('Error al guardar el producto: ' + createResult.error.message);
+        setInfoType('error');
         setUploading(false);
         return;
       }
-    }
-    try {
-      const result = await onSubmit({
-        name,
-        price: parseFloat(price),
-        original_price: parseFloat(price), // El precio actual se guarda como precio original para nuevos productos
-        category,
-        image_url,
-      });
-      // Si el submit retorna error, mostrarlo
-      if (result && result.error) {
-        setError('Error al guardar el producto: ' + result.error.message);
-        setInfoMsg('Error al guardar el producto: ' + result.error.message);
+
+      const createdRow = createResult && (createResult as any).data && (createResult as any).data[0];
+      console.log('[AddProductForm] createResult:', createResult, 'createdRow:', createdRow);
+
+      let imageSuccess = false;
+      if (fileToUpload && createdRow && createdRow.id) {
+        setInfoMsg('Subiendo imagen...');
+        setInfoType('info');
+        try {
+          const url = await uploadProductImage(fileToUpload);
+          if (url) {
+            const { error } = await supabase.from('products').update({ image_url: url }).eq('id', createdRow.id);
+            if (error) {
+              setInfoMsg('Error actualizando producto con imagen: ' + error.message);
+              setInfoType('error');
+              console.error('Error actualizando producto con image_url:', error);
+            } else {
+              setInfoMsg('¡Producto e imagen subidos correctamente!');
+              setInfoType('success');
+              document.dispatchEvent(new CustomEvent('productUpdated', { detail: { id: createdRow.id, image_url: url } }));
+              imageSuccess = true;
+            }
+          } else {
+            setInfoMsg('Error al subir la imagen. El producto fue creado, pero la imagen no se pudo subir.');
+            setInfoType('error');
+            console.warn('Subida en background falló o devolvió null para', createdRow.id);
+          }
+        } catch (err) {
+          setInfoMsg('Error inesperado al subir la imagen. El producto fue creado, pero la imagen no se pudo subir.');
+          setInfoType('error');
+          console.error('Error en subida background:', err);
+        }
+      }
+
+      // Éxito de creación (aunque la imagen falle)
+      setName('');
+      setPrice('');
+      setCategory('');
+      setImageState(null);
+      imageRef.current = null;
+      setUploading(false);
+      if (fileToUpload && !imageSuccess) {
+        setInfoMsg('El producto fue creado, pero la imagen no se pudo subir.');
         setInfoType('error');
       } else {
-        setName('');
-        setPrice('');
-        setCategory(''); // Sin categoría por defecto
-        setImage(null);
         setInfoMsg('¡Producto agregado correctamente!');
         setInfoType('success');
-        
-        // Esperar un breve momento para mostrar el mensaje de éxito antes de cerrar el formulario
-        setTimeout(() => {
-          const event = new CustomEvent('productAdded', { detail: { success: true } });
-          document.dispatchEvent(event);
-        }, 1500);
       }
+      setTimeout(() => {
+        const event = new CustomEvent('productAdded', { detail: { success: true } });
+        document.dispatchEvent(event);
+      }, 500);
     } catch (err: unknown) {
       setError('Error al guardar el producto: ' + (err instanceof Error ? err.message : String(err)));
       setInfoMsg('Error al guardar el producto: ' + (err instanceof Error ? err.message : String(err)));
       setInfoType('error');
+      setUploading(false);
     }
-    setUploading(false);
   };
 
   // Función para crear una nueva categoría
-  const handleCreateCategory = async () => {
-    const input = document.getElementById('new-category-name') as HTMLInputElement;
-    const name = input?.value?.trim();
-    
-    if (!input) {
-      console.error('❌ No se encontró el input de nueva categoría');
-      setInfoMsg('Error: No se encontró el campo de categoría.');
-      setInfoType('error');
-      return;
-    }
-    
-    if (!name) {
+  const handleCreateCategory = async (name: string) => {
+    console.log('[AddProductForm] handleCreateCategory - start, current image?:', !!image, image?.name);
+    if (!name || !name.trim()) {
       setInfoMsg('El nombre de la categoría es obligatorio.');
       setInfoType('error');
       return;
     }
-    
     if (!userId) {
       setInfoMsg('No se pudo obtener el usuario. Por favor, inicia sesión.');
       setInfoType('error');
       return;
     }
-    
     try {
       setInfoMsg('Creando categoría...');
       setInfoType('info');
-      
-      // Crear la categoría usando el hook
-      const { error, data } = await addCategory(name, userId);
-      
+      const { error, data } = await addCategory(name.trim(), userId);
       if (error) {
         setInfoMsg('Error al crear categoría: ' + error.message);
         setInfoType('error');
         return;
       }
-      
       if (!data || !data[0] || !data[0].id) {
         setInfoMsg('Error: No se pudo obtener el ID de la categoría creada');
         setInfoType('error');
         return;
       }
-      
-      // La categoría se creó correctamente
       const newCategoryId = data[0].id;
+      setLastCreatedCategoryId(newCategoryId);
       console.log('Nueva categoría creada con ID:', newCategoryId);
-      
-      // Actualizar el mensaje para el usuario
       setInfoMsg(`¡Categoría "${name}" creada y seleccionada!`);
       setInfoType('success');
-      
-      // Actualizar el estado de React inmediatamente
       setCategory(newCategoryId);
-      
-      // Cerrar el input de nueva categoría
-      const categoryInput = document.getElementById('new-category-input');
-      if (categoryInput) {
-        (input as HTMLInputElement).value = '';
-        categoryInput.style.display = 'none';
-      }
-      
-      // Disparar evento para que el AdminPanel sepa que hay una nueva categoría
-      document.dispatchEvent(new CustomEvent('categoryAdded', { 
-        detail: { categoryId: newCategoryId, categoryName: name }
-      }));
-      
-      // Actualizar las categorías para que aparezca la nueva en la lista
-      if (fetchCategories) {
-        try {
-          await fetchCategories();
-          console.log('✅ Categorías actualizadas después de crear nueva');
-        } catch (error) {
-          console.error('Error al actualizar categorías:', error);
-        }
-      }
-      
-      // Verificar que la categoría se seleccionó correctamente (opcional, solo para debug)
+      setShowNewCategoryInput(false);
+      document.dispatchEvent(new CustomEvent('categoryAdded', { detail: { categoryId: newCategoryId, categoryName: name } }));
+      // No hacer fetchCategories aquí, AdminPanel ya lo maneja tras categoryAdded
       setTimeout(() => {
         console.log('✅ Categoría seleccionada:', newCategoryId);
         console.log('✅ Estado React actualizado:', category);
+        console.log('[AddProductForm] after createCategory - image state still:', !!image, image?.name);
       }, 100);
     } catch (err) {
       setInfoMsg('Error al crear categoría');
@@ -251,6 +204,13 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
       console.error('Error al crear categoría:', err);
     }
   };
+
+  // Limpia el marcador de la última categoría creada cuando el formulario se envía con éxito
+  useEffect(() => {
+    if (infoType === 'success' && infoMsg === '¡Producto agregado correctamente!') {
+      setLastCreatedCategoryId(null);
+    }
+  }, [infoType, infoMsg]);
 
   return (
     <form onSubmit={handleSubmit} className={getThemeClass({dark:'space-y-4','light':'space-y-4'})}>
@@ -307,39 +267,49 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
             onClick={() => {
               setInfoMsg('');
               setInfoType(null);
-              const input = document.getElementById('new-category-input') as HTMLDivElement;
-              if (input) input.style.display = 'flex';
+              setShowNewCategoryInput(true);
             }}
           >
             + Nueva
           </button>
         </div>
-        {/* Input para nueva categoría, oculto por defecto */}
-        <div style={{ display: 'none' }} id="new-category-input" className="mt-2 flex gap-2 items-center">
-          <input
-            type="text"
-            placeholder="Nombre de la nueva categoría"
-            className={getThemeClass({dark:'rounded-lg px-3 py-2 bg-zinc-800 text-white','light':'rounded-lg px-3 py-2 bg-yellow-50 text-zinc-900 border border-yellow-200'})}
-            id="new-category-name"
-          />
-          <button
-            type="button"
-            className="bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-2 rounded-lg"
-            onClick={handleCreateCategory}
-          >
-            Guardar
-          </button>
-          <button
-            type="button"
-            className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-2 rounded-lg"
-            onClick={() => {
-              const input = document.getElementById('new-category-input');
-              if (input) input.style.display = 'none';
-            }}
-          >
-            Cancelar
-          </button>
-        </div>
+        {/* Input para nueva categoría debajo del selector */}
+        {showNewCategoryInput && (
+          <div className="mt-2 flex gap-2 items-center">
+            <input
+              type="text"
+              placeholder="Nombre de la nueva categoría"
+              className={getThemeClass({dark:'rounded-lg px-3 py-2 bg-zinc-800 text-white','light':'rounded-lg px-3 py-2 bg-yellow-50 text-zinc-900 border border-yellow-200'})}
+              value={newCategoryName}
+              onChange={e => setNewCategoryName(e.target.value)}
+            />
+            <button
+              type="button"
+              className="bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-2 rounded-lg"
+              onClick={async () => {
+                // Guardar imagen actual en ref antes de crear categoría
+                const currentImage = imageRef.current;
+                await handleCreateCategory(newCategoryName);
+                setNewCategoryName('');
+                setShowNewCategoryInput(false);
+                // Restaurar imagen seleccionada si existía
+                if (currentImage) {
+                  setImageState(currentImage);
+                  imageRef.current = currentImage;
+                  console.log('[AddProductForm] Imagen restaurada tras crear categoría:', currentImage.name);
+                }
+              }}
+            >Guardar</button>
+            <button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-2 rounded-lg"
+              onClick={() => {
+                setShowNewCategoryInput(false);
+                setNewCategoryName('');
+              }}
+            >Cancelar</button>
+          </div>
+        )}
       </div>
       <div>
         <label className={getThemeClass({dark:'block text-zinc-300 mb-1',light:'block text-yellow-900 mb-1 font-semibold'})}>Imagen</label>
@@ -351,7 +321,11 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
             type="file"
             accept="image/*"
             className="hidden"
-            onChange={e => setImage(e.target.files?.[0] || null)}
+            onChange={e => {
+              const file = e.target.files?.[0] || null;
+              setImageState(file);
+              imageRef.current = file;
+            }}
           />
           <span className="ml-auto text-green-400 font-bold">{image ? '✔️' : '📷'}</span>
         </label>
@@ -375,7 +349,7 @@ export function AddProductForm({ categories, onSubmit, loading, getThemeClass }:
       <button
         type="submit"
         className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg mt-2"
-        disabled={loading || uploading}
+        disabled={loading || uploading || !userId}
       >
         {uploading ? 'Subiendo imagen...' : loading ? 'Agregando...' : 'Agregar producto'}
       </button>

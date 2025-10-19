@@ -24,10 +24,10 @@ export default function ClientSpecificPage() {
       
       // Buscar cliente por slug/business_name
       const clients = await ClientAccountManager.getAllActiveClients();
-      const foundClient = clients.find(c => 
-        c.business_name.toLowerCase().replace(/\s+/g, '-') === clientSlug ||
-        c.id === clientSlug
-      );
+      const foundClient = clients.find(c => {
+        const nameSlug = (c.business_name ?? '').toLowerCase().replace(/\s+/g, '-');
+        return nameSlug === clientSlug || c.id === clientSlug;
+      });
 
       if (foundClient) {
         setClient(foundClient);

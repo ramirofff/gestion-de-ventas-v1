@@ -83,7 +83,7 @@ export function ClientSelector({ onClientSelect, selectedClientId }: ClientSelec
           <option value="">Sin cliente específico</option>
           {clients.map((client) => (
             <option key={client.id} value={client.id}>
-              {client.business_name} ({client.email})
+              {(client.business_name ?? '')} ({client.email})
             </option>
           ))}
         </select>
@@ -101,7 +101,7 @@ export function ClientSelector({ onClientSelect, selectedClientId }: ClientSelec
       {/* Cliente seleccionado info */}
       {selectedClient && (
         <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm">
-          <strong>{selectedClient.business_name}</strong>
+          <strong>{selectedClient.business_name ?? ''}</strong>
           <br />
           {selectedClient.email} • {selectedClient.country}
           <br />

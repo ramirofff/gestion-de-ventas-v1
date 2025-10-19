@@ -1,4 +1,4 @@
--- SQL PARA EJECUTAR
+-- MOVED TO archive/cleanup-2025-10-18/SQL PARA EJECUTAR.sql
 -- Script completo para crear todas las tablas y políticas necesarias en Supabase para el proyecto de gestión de ventas
 
 -- Tabla de usuarios conectados (Stripe Connected Accounts)

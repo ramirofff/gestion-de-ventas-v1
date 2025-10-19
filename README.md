@@ -75,6 +75,30 @@ npm run dev
 
 Open [https://gestion-de-ventas-v1.vercel.app](https://gestion-de-ventas-v1.vercel.app) in your browser.
 
+## Limpieza y preparación del entorno
+
+1. Copia `.env.example` a `.env.local` y completa las variables requeridas.
+
+```bash
+cp .env.example .env.local
+# editar .env.local con tus valores reales
+```
+
+2. Limpiar artefactos locales (no elimina node_modules por defecto):
+
+```bash
+npm run clean
+```
+
+3. Para limpiar todo (incluye node_modules):
+
+```bash
+npm run clean:all
+```
+
+Recomendación de producción
+- Antes de desplegar a producción, considera quitar temporalmente las opciones `ignoreBuildErrors` e `ignoreDuringBuilds` en `next.config.ts` y ejecutar `npm run type-check` y `npm run build` localmente para detectar y corregir errores que podrían quedar ocultos en el build.
+
 ## 📦 Deployment
 
 ### **Vercel (Recommended)**

@@ -1,0 +1,154 @@
+# SQL a ejecutar en Supabase para inicializar la base de datos del proyecto
+
+Este archivo contiene el SQL necesario para crear todas las tablas y restricciones de seguridad (RLS/políticas) requeridas para que el sistema funcione correctamente.
+
+**Recomendación:** Ejecuta cada parte por separado en el editor SQL de Supabase para evitar errores y facilitar el debug.
+
+---
+
+## PARTE 1: Tablas base y usuarios
+
+```sql
+CREATE TABLE public.superusers (
+  id uuid NOT NULL,
+  email text NOT NULL UNIQUE,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT superusers_pkey PRIMARY KEY (id),
+  CONSTRAINT superusers_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+
+CREATE TABLE public.categories (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  name text NOT NULL,
+  user_id uuid NOT NULL,
+  is_active boolean DEFAULT true,
+  sort_order integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT categories_pkey PRIMARY KEY (id),
+  CONSTRAINT categories_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+```
+
+---
+
+## PARTE 2: Tablas principales y relaciones
+
+```sql
+CREATE TABLE public.connected_accounts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  stripe_account_id text NOT NULL UNIQUE,
+  email text NOT NULL,
+  business_name text NOT NULL,
+  country text NOT NULL DEFAULT 'AR',
+  commission_rate numeric NOT NULL DEFAULT 0.05,
+  status text NOT NULL DEFAULT 'pending' CHECK (status = ANY (ARRAY['pending', 'active', 'restricted', 'inactive'])),
+  details_submitted boolean DEFAULT false,
+  charges_enabled boolean DEFAULT false,
+  payouts_enabled boolean DEFAULT false,
+  onboarding_completed boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT connected_accounts_pkey PRIMARY KEY (id),
+  CONSTRAINT connected_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+
+CREATE TABLE public.products (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  name text NOT NULL,
+  price numeric NOT NULL CHECK (price >= 0),
+  original_price numeric CHECK (original_price >= 0),
+  category text,
+  image_url text,
+  stock_quantity integer DEFAULT 0 CHECK (stock_quantity >= 0),
+  is_active boolean DEFAULT true,
+  is_featured boolean DEFAULT false,
+  user_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT products_pkey PRIMARY KEY (id),
+  CONSTRAINT products_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+
+CREATE TABLE public.user_settings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE,
+  business_name text,
+  theme text DEFAULT 'dark' CHECK (theme = ANY (ARRAY['light', 'dark'])),
+  favorite_products ARRAY DEFAULT '{}'::text[],
+  stripe_configured boolean DEFAULT false,
+  stripe_account_id text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT user_settings_pkey PRIMARY KEY (id),
+  CONSTRAINT user_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+
+CREATE TABLE public.payment_sessions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  session_id text NOT NULL,
+  cart_data jsonb,
+  total_amount numeric,
+  processed boolean DEFAULT false,
+  expires_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT payment_sessions_pkey PRIMARY KEY (id),
+  CONSTRAINT payment_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+```
+
+---
+
+## PARTE 3: Tablas de ventas y comisiones
+
+```sql
+CREATE TABLE public.sales (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  ticket_id text,
+  user_id uuid NOT NULL,
+  products jsonb NOT NULL,
+  subtotal numeric NOT NULL DEFAULT 0.00,
+  discount_amount numeric DEFAULT 0.00,
+  total numeric NOT NULL CHECK (total >= 0),
+  payment_method text DEFAULT 'cash',
+  payment_status text DEFAULT 'completed' CHECK (payment_status = ANY (ARRAY['pending', 'completed', 'failed', 'refunded', 'cancelled'])),
+  stripe_payment_intent_id text UNIQUE,
+  status text DEFAULT 'completed' CHECK (status = ANY (ARRAY['draft', 'pending', 'processing', 'completed', 'cancelled', 'refunded'])),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  metadata jsonb,
+  CONSTRAINT sales_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE public.commission_sales (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  connected_account_id uuid NOT NULL,
+  stripe_payment_intent_id text UNIQUE,
+  stripe_session_id text,
+  customer_email text,
+  product_name text NOT NULL,
+  amount_total numeric NOT NULL,
+  commission_amount numeric NOT NULL,
+  net_amount numeric NOT NULL,
+  currency text NOT NULL DEFAULT 'usd',
+  status text NOT NULL DEFAULT 'pending' CHECK (status = ANY (ARRAY['pending', 'completed', 'failed'])),
+  transfer_id text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  stripe_account_id text,
+  CONSTRAINT commission_sales_pkey PRIMARY KEY (id),
+  CONSTRAINT commission_sales_connected_account_id_fkey FOREIGN KEY (connected_account_id) REFERENCES public.connected_accounts(id)
+);
+```
+
+---
+
+**Notas:**
+- Ejecuta cada bloque por separado en el editor SQL de Supabase.
+- El orden asegura que las dependencias y claves foráneas no fallen.
+- Puedes personalizar las políticas y triggers según los requerimientos de tu negocio.
+- Si necesitas migrar datos antiguos, revisa los scripts archivados en `archive/cleanup-2025-10-18/`.
