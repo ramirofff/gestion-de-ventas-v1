@@ -156,3 +156,40 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* Base form controls: asegurar contraste y legibilidad */
+input, select, textarea {
+  background-color: #ffffff;
+  color: #111827; /* gray-900 */
+  border: 1px solid #d1d5db; /* gray-300 */
+  caret-color: #3b82f6; /* blue-500 */
+}
+
+input::placeholder, textarea::placeholder {
+  color: #9ca3af; /* gray-400 */
+}
+
+/* Estados de foco coherentes */
+input:focus, select:focus, textarea:focus {
+  border-color: #3b82f6; /* blue-500 */
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+/* Dark mode automático (según prefers-color-scheme) */
+@media (prefers-color-scheme: dark) {
+  input, select, textarea {
+    background-color: #18181b; /* zinc-900 */
+    color: #ffffff;
+    border-color: #3f3f46; /* zinc-700 */
+    caret-color: #60a5fa; /* blue-400 */
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: #a1a1aa; /* zinc-400 */
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: #60a5fa; /* blue-400 */
+    box-shadow: 0 0 0 1px #60a5fa;
+  }
+}

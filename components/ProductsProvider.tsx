@@ -19,6 +19,19 @@ export function ProductsProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper: fetch con timeout para evitar quedadas indefinidas
+  const fetchWithTimeout = async (ms: number) => {
+    let timeoutId: NodeJS.Timeout | undefined = undefined;
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`Timeout cargando productos después de ${ms}ms`)), ms);
+      });
+      await Promise.race([fetchProducts(), timeoutPromise]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
+  };
+
   const fetchProducts = async () => {
     console.log('🔄 ProductsProvider: Iniciando carga de productos... (loading:', loading, ')');
     setLoading(true);
@@ -56,13 +69,16 @@ export function ProductsProvider({ children }: { children: React.ReactNode }) {
   const retryFetchProducts = () => {
     setError(null);
     setLoading(true);
-    fetchProducts();
+    // Usar timeout corto en reintento para no quedar colgado
+    fetchWithTimeout(10000).catch((e) => {
+      console.warn('Reintento con timeout falló:', e);
+      setLoading(false);
+    });
   };
 
   useEffect(() => {
-    // Cargar productos inmediatamente sin verificar usuario
+    // Carga inicial con timeout
     console.log('🚀 ProductsProvider: Iniciando carga inicial de productos...');
-    // Agregar timeout para evitar que se quede cargando indefinidamente
     const loadWithTimeout = async () => {
       let timeoutId: NodeJS.Timeout | undefined = undefined;
       try {
@@ -82,17 +98,48 @@ export function ProductsProvider({ children }: { children: React.ReactNode }) {
       }
     };
     loadWithTimeout();
-    // Escuchar cambios de autenticación para recargar si es necesario
+
+    // Escuchar auth para recargar tras login
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔄 Auth state change:', event, session?.user ? 'with user' : 'no user');
       if (event === 'SIGNED_IN' && session?.user) {
         console.log('✅ Usuario conectado, recargando productos...');
-        await fetchProducts(); 
+        await fetchWithTimeout(10000);
       }
-      // No limpiar productos al hacer logout, mantenerlos disponibles
     });
-    return () => subscription.unsubscribe();
+
+    // Reintentos al volver a estar visible o reconectar red
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        console.log('👁️ Pestaña visible: refrescando productos');
+        fetchWithTimeout(8000).catch(() => {});
+      }
+    };
+    const handleOnline = () => {
+      console.log('🌐 Conexión restaurada: refrescando productos');
+      fetchWithTimeout(8000).catch(() => {});
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
+
+  // Watchdog: si loading persiste > 12s, forzar un reintento con timeout
+  useEffect(() => {
+    if (!loading) return;
+    const watchdog = setTimeout(() => {
+      if (loading) {
+        console.warn('⏱️ Watchdog: loading prolongado, forzando reintento...');
+        retryFetchProducts();
+      }
+    }, 12000);
+    return () => clearTimeout(watchdog);
+  }, [loading]);
 
   return (
     <ProductsContext.Provider value={{ products, setProducts, loading, fetchProducts, error, retryFetchProducts }}>

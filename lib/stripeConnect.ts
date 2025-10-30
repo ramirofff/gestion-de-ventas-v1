@@ -31,6 +31,12 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-07-30.basil',
 });
 
+// Log de modo (no imprime la key)
+(() => {
+  const key = process.env.STRIPE_SECRET_KEY || '';
+  console.log('[StripeConnect] Key mode:', key.startsWith('sk_live_') ? 'LIVE' : 'TEST');
+})();
+
 export interface ConnectedAccount {
   id: string;
   email: string;
@@ -160,19 +166,26 @@ export async function createPaymentWithCommission({
   userId?: string; // Agregar tipo para userId
 }) {
   try {
-  const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
-  const netAmount = Math.round((amount - commissionAmount) * 100) / 100;
+    const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
+    const netAmount = Math.round((amount - commissionAmount) * 100) / 100;
 
+    // Diagnóstico: si no es cuenta virtual, loguear livemode de la subcuenta
+    if (!connectedAccountId.startsWith('ar_virtual_')) {
+      try {
+        const acct = await stripe.accounts.retrieve(connectedAccountId);
+        console.log('[StripeConnect] Connected account', acct.id, 'livemode:', acct.livemode);
+      } catch (e) {
+        console.warn('[StripeConnect] No se pudo obtener la cuenta conectada', connectedAccountId, e);
+      }
+    }
 
     // Determinar URLs según el tipo de pago
     const successUrl = isQRPayment 
-  ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`
-  : `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment/thank-you?session_id={CHECKOUT_SESSION_ID}`;
-    
-  const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment/cancel`;
-    // Para cuentas virtuales de Argentina, procesar el pago sin transfer automático
+      ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`
+      : `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment/thank-you?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment/cancel`;
+
     if (connectedAccountId.startsWith('ar_virtual_')) {
-      
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
         payment_method_types: ['card'],
@@ -183,7 +196,7 @@ export async function createPaymentWithCommission({
               name: productName,
               description: `Cliente Argentina - Transfer manual requerido`
             },
-            unit_amount: amount * 100, // Stripe usa centavos
+            unit_amount: amount * 100,
           },
           quantity: 1,
         }],
@@ -193,15 +206,14 @@ export async function createPaymentWithCommission({
         metadata: {
           connected_account: connectedAccountId,
           commission_rate: commissionRate.toString(),
-          cart_data: JSON.stringify(cartData), // Agregar datos del carrito
-          user_id: userId || '', // Agregar userId a metadatos con fallback
+          cart_data: JSON.stringify(cartData),
+          user_id: userId || '',
         },
       });
-
+      console.log('[StripeConnect] Checkout session livemode:', (session as any).livemode, 'id:', session.id);
       return session;
     }
 
-    // Para cuentas reales de Stripe Connect (países soportados)
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
@@ -212,14 +224,14 @@ export async function createPaymentWithCommission({
             name: productName,
             description: `Procesado por plataforma - Comisión: ${(commissionRate * 100).toFixed(1)}%`
           },
-          unit_amount: amount * 100, // Stripe usa centavos
+          unit_amount: amount * 100,
         },
         quantity: 1,
       }],
       payment_intent_data: {
-        application_fee_amount: commissionAmount * 100, // Tu comisión en centavos
+        application_fee_amount: commissionAmount * 100,
         transfer_data: {
-          destination: connectedAccountId, // Subcuenta del cliente
+          destination: connectedAccountId,
         },
       },
       customer_email: customerEmail,
@@ -228,11 +240,12 @@ export async function createPaymentWithCommission({
       metadata: {
         connected_account: connectedAccountId,
         commission_rate: commissionRate.toString(),
-        cart_data: JSON.stringify(cartData), // Agregar datos del carrito
-        user_id: userId || '', // Agregar userId a metadatos con fallback
+        cart_data: JSON.stringify(cartData),
+        user_id: userId || '',
       },
     });
 
+    console.log('[StripeConnect] Checkout session livemode:', (session as any).livemode, 'id:', session.id);
     return session;
   } catch (error) {
     throw error;

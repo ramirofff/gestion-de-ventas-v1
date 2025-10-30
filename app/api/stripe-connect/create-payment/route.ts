@@ -6,6 +6,12 @@ import { supabaseAdmin } from '../../../../lib/supabaseClient';
 export async function POST(request: NextRequest) {
   try {
     console.log('💳 API: Creando pago con comisión...');
+    const key = process.env.STRIPE_SECRET_KEY || '';
+    console.log('[API create-payment] Key mode:', key.startsWith('sk_live_') ? 'LIVE' : 'TEST');
+    const pub = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+    console.log('[API create-payment] Publishable mode:', pub.startsWith('pk_live_') ? 'LIVE' : 'TEST');
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || '(not set)';
+    console.log('[API create-payment] App URL:', appUrl);
     
     const body = await request.json();
     const { 
@@ -88,11 +94,12 @@ export async function POST(request: NextRequest) {
     });
 
     console.log('✅ Sesión de pago creada:', session.id);
+    console.log('🧪 session.livemode:', (session as any).livemode);
     console.log('📝 Payment Intent ID:', session.payment_intent);
 
     // Guardar venta en base de datos
-  const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
-  const netAmount = Math.round((amount - commissionAmount) * 100) / 100;
+    const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
+    const netAmount = Math.round((amount - commissionAmount) * 100) / 100;
 
     // Verificar si ya existe una comisión para este payment_intent o session_id
     let existingCommission = null;

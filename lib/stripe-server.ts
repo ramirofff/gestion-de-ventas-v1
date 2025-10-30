@@ -9,15 +9,19 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   typescript: true,
 });
 
-// Configuración para Stripe Express
+// Log de modo (no imprime la key completa)
+(() => {
+  const key = process.env.STRIPE_SECRET_KEY || '';
+  console.log('[Stripe] Key mode:', key.startsWith('sk_live_') ? 'LIVE' : 'TEST');
+})();
+
+// Configuración opcional para Stripe Express (solo si usas OAuth)
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app';
 export const STRIPE_EXPRESS_CONFIG = {
-  client_id: process.env.STRIPE_EXPRESS_CLIENT_ID,
-  redirect_uri: process.env.NODE_ENV === 'production' 
-    ? 'https://your-domain.com/api/stripe/express/callback'
-  : 'https://gestion-de-ventas-v1.vercel.app/api/stripe/express/callback',
+  client_id: process.env.STRIPE_EXPRESS_CLIENT_ID || undefined, // opcional
+  redirect_uri: `${appUrl}/api/stripe/express/callback`,
 };
 
-// Tipos para Stripe Express
 export interface StripeExpressAccount {
   id: string;
   object: string;

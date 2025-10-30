@@ -106,15 +106,17 @@ const ConnectOnboarding: React.FC<ConnectOnboardingProps> = ({ currentUser }) =>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="businessName" className="block text-sm font-medium text-gray-700 mb-2">
             Nombre de tu Negocio/Emprendimiento
           </label>
           <input
+            id="businessName"
             type="text"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
             placeholder="Ej: Mi Tienda, Servicios Juan, etc."
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-invalid={!businessName.trim()}
           />
         </div>
 

@@ -123,6 +123,7 @@ export default function StripeConnectManual() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="acct_xxxxxxxxxxxxxxxx"
                 required
+                aria-invalid={!accountData.accountId}
               />
               <p className="text-xs text-gray-500 mt-1">
                 Este ID te será proporcionado por tu administrador
@@ -132,7 +133,7 @@ export default function StripeConnectManual() {
             {/* Business Name */}
             <div>
               <label htmlFor="businessName" className="block text-sm font-medium text-gray-700 mb-2">
-                Nombre del Negocio
+                Nombre del Negocio *
               </label>
               <input
                 type="text"
@@ -140,14 +141,16 @@ export default function StripeConnectManual() {
                 value={accountData.businessName}
                 onChange={(e) => setAccountData({ ...accountData, businessName: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Mi Empresa SRL"
+                placeholder="Mi Negocio"
+                required
+                aria-invalid={!accountData.businessName}
               />
             </div>
 
             {/* Email */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email de Contacto
+                Email de contacto *
               </label>
               <input
                 type="email"
@@ -155,7 +158,9 @@ export default function StripeConnectManual() {
                 value={accountData.email}
                 onChange={(e) => setAccountData({ ...accountData, email: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="contacto@miempresa.com"
+                placeholder="correo@ejemplo.com"
+                required
+                aria-invalid={!accountData.email}
               />
             </div>
 
