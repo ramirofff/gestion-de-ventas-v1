@@ -42,9 +42,24 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [isPolling, setIsPolling] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('selection');
+  const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('processing');
   const [isProcessed, setIsProcessed] = useState(false); // Control para evitar múltiples procesamientos
   const { theme, getThemeClass } = useTheme();
+
+  // Iniciar automáticamente el flujo con QR (sin opción de enlace directo) solo cuando haya usuario
+  useEffect(() => {
+    if (paymentMode === 'processing' && !paymentUrl && !loading && currentUser) {
+      setShowQR(true);
+      createPaymentLink();
+    }
+  }, [paymentMode, paymentUrl, loading, currentUser]);
+
+  // Limpiar error de autenticación cuando el usuario esté disponible
+  useEffect(() => {
+    if (currentUser && error === 'Debes iniciar sesión para realizar pagos') {
+      setError(null);
+    }
+  }, [currentUser, error]);
 
   // Obtener usuario autenticado
   useEffect(() => {
@@ -317,7 +332,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
 
   // Función para manejar la selección de método de pago
   const handlePaymentMethodSelection = (method: 'qr' | 'link') => {
-    setShowQR(method === 'qr');
+    setShowQR(true);
     setPaymentMode('processing');
     createPaymentLink();
   };
