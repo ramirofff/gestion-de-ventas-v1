@@ -188,7 +188,12 @@ export async function createPaymentWithCommission({
     if (connectedAccountId.startsWith('ar_virtual_')) {
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
-        payment_method_types: ['card'],
+        payment_method_types: ['card', 'link', 'apple_pay', 'google_pay'],
+        payment_method_options: {
+          link: {
+            persistent_token: undefined, // Stripe maneja automáticamente las tarjetas guardadas
+          },
+        },
         line_items: [{
           price_data: {
             currency: currency,
@@ -203,6 +208,8 @@ export async function createPaymentWithCommission({
         customer_email: customerEmail,
         success_url: successUrl,
         cancel_url: cancelUrl,
+        locale: 'es',
+        allow_promotion_codes: false,
         metadata: {
           connected_account: connectedAccountId,
           commission_rate: commissionRate.toString(),
@@ -216,7 +223,12 @@ export async function createPaymentWithCommission({
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
-      payment_method_types: ['card'],
+      payment_method_types: ['card', 'link', 'apple_pay', 'google_pay'],
+      payment_method_options: {
+        link: {
+          persistent_token: undefined, // Stripe maneja automáticamente las tarjetas guardadas
+        },
+      },
       line_items: [{
         price_data: {
           currency: currency,
@@ -237,6 +249,8 @@ export async function createPaymentWithCommission({
       customer_email: customerEmail,
       success_url: successUrl,
       cancel_url: cancelUrl,
+      locale: 'es',
+      allow_promotion_codes: false,
       metadata: {
         connected_account: connectedAccountId,
         commission_rate: commissionRate.toString(),
