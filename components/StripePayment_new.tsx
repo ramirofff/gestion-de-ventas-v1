@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { QRDisplay } from './QRDisplay';
 import { ClientAccount } from '../lib/client-accounts';
 import { supabase } from '../lib/supabaseClient';
@@ -46,13 +46,111 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const [isProcessed, setIsProcessed] = useState(false); // Control para evitar múltiples procesamientos
   const { theme, getThemeClass } = useTheme();
 
+  // Función para iniciar el polling de pagos (memoizada)
+  const startPaymentPolling = useCallback((sessionId: string) => {
+    if (isPolling) {
+      console.log('⚠️ Polling ya está activo');
+      return;
+    }
+    console.log('🔄 Iniciando polling para sesión:', sessionId);
+    setIsPolling(true);
+  }, [isPolling]);
+
+  // Función para crear el enlace de pago (memoizada para evitar dependencias circulares)
+  const createPaymentLink = useCallback(async () => {
+    if (!currentUser) {
+      setError('Debes iniciar sesión para realizar pagos');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('🔍 StripePayment: Iniciando creación de enlace...');
+      
+      const paymentData = {
+        amount: amount,
+        originalAmount: originalAmount,
+        discountAmount: discountAmount,
+        currency: 'usd',
+        description: `Venta - ${items.length} producto(s)`,
+        customer_email: selectedClient?.email,
+        user_email: currentUser.email
+      };
+
+      const statusResponse = await fetch('/api/stripe-connect/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id })
+      });
+      
+      const statusData = await statusResponse.json();
+      
+      if (!statusData.connected) {
+        throw new Error('No tienes una cuenta Stripe Connect configurada');
+      }
+
+      console.log('📤 Procesando pago con Stripe Connect:', statusData.account.id);
+
+      const response = await fetch('/api/stripe-connect/create-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          userEmail: currentUser.email,
+          connectedAccountId: statusData.account.id,
+          amount: paymentData.amount,
+          productName: paymentData.description,
+          customerEmail: paymentData.customer_email,
+          commissionRate: 0.05,
+          currency: paymentData.currency || 'usd',
+          isQRPayment: true, // Siempre QR
+          cartData: items
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al crear enlace de pago');
+      }
+
+      console.log('✅ Enlace de pago creado exitosamente');
+      console.log('📦 Datos recibidos:', data);
+      console.log('🔗 Payment URL:', data.payment_url);
+      
+      setPaymentUrl(data.payment_url);
+      setSessionId(data.session_id);
+
+      // Iniciar polling automáticamente para QR
+      if (data.session_id && !isPolling) {
+        console.log('🚀 Iniciando polling automáticamente después de crear enlace...');
+        setIsPolling(true);
+        startPaymentPolling(data.session_id);
+      }
+
+    } catch (err: unknown) {
+      console.error('❌ Error creating payment link:', err);
+      setError((err as Error).message || 'Error al procesar el pago');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser, amount, originalAmount, discountAmount, items, selectedClient, isPolling, startPaymentPolling]);
+
   // Iniciar automáticamente el flujo con QR (sin opción de enlace directo) solo cuando haya usuario
   useEffect(() => {
-    if (paymentMode === 'processing' && !paymentUrl && !loading && currentUser) {
+    if (paymentMode === 'processing' && !paymentUrl && !loading && currentUser && !error) {
       setShowQR(true);
-      createPaymentLink();
+      // Pequeño delay para asegurar que el estado se actualizó
+      const timeoutId = setTimeout(() => {
+        createPaymentLink();
+      }, 100);
+      return () => clearTimeout(timeoutId);
     }
-  }, [paymentMode, paymentUrl, loading, currentUser]);
+  }, [paymentMode, paymentUrl, loading, currentUser, error, createPaymentLink]);
 
   // Limpiar error de autenticación cuando el usuario esté disponible
   useEffect(() => {
@@ -200,17 +298,6 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     }
   };
 
-  // Función para iniciar el polling de pagos
-  const startPaymentPolling = (sessionId: string) => {
-    if (isPolling) {
-      console.log('⚠️ Polling ya está activo');
-      return;
-    }
-    
-    console.log('🔄 Iniciando polling para sesión:', sessionId);
-    setIsPolling(true);
-  };
-
   // Polling para verificar el estado del pago cada 3 segundos
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -234,101 +321,6 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
       }
     };
   }, [isPolling, sessionId, currentUser, onSuccess]);
-
-  // Función para crear el enlace de pago
-  const createPaymentLink = async () => {
-    if (!currentUser) {
-      setError('Debes iniciar sesión para realizar pagos');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      console.log('🔍 StripePayment: Iniciando creación de enlace...');
-      
-      const paymentData = {
-        amount: amount,
-        originalAmount: originalAmount,
-        discountAmount: discountAmount,
-        currency: 'usd',
-        description: `Venta - ${items.length} producto(s)`,
-        customer_email: selectedClient?.email,
-        user_email: currentUser.email
-      };
-
-      const statusResponse = await fetch('/api/stripe-connect/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id })
-      });
-      
-      const statusData = await statusResponse.json();
-      
-      if (!statusData.connected) {
-        throw new Error('No tienes una cuenta Stripe Connect configurada');
-      }
-
-      console.log('📤 Procesando pago con Stripe Connect:', statusData.account.id);
-
-      const response = await fetch('/api/stripe-connect/create-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          userEmail: currentUser.email,
-          connectedAccountId: statusData.account.id,
-          amount: paymentData.amount,
-          productName: paymentData.description,
-          customerEmail: paymentData.customer_email,
-          commissionRate: 0.05,
-          currency: paymentData.currency || 'usd',
-          isQRPayment: showQR,
-          cartData: items // Agregar los datos del carrito
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al crear enlace de pago');
-      }
-
-      console.log('✅ Enlace de pago creado exitosamente');
-      console.log('📦 Datos recibidos:', data);
-      console.log('🔗 Payment URL:', data.payment_url);
-      
-      setPaymentUrl(data.payment_url);
-      setSessionId(data.session_id);
-
-      // Solo abrir automáticamente si es enlace directo (no QR)
-      if (data.payment_url && !showQR) {
-        console.log('🚀 Abriendo ventana de Stripe Checkout automáticamente (enlace directo)...');
-        const paymentWindow = window.open(data.payment_url, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-        
-        if (!paymentWindow) {
-          console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
-          alert('Por favor permite popups para abrir el pago');
-        }
-      }
-      
-      // Iniciar polling automáticamente para ambos casos
-      if (data.session_id && !isPolling) {
-        console.log('🚀 Iniciando polling automáticamente después de crear enlace...');
-        setIsPolling(true);
-        startPaymentPolling(data.session_id);
-      }
-
-    } catch (err: unknown) {
-      console.error('❌ Error creating payment link:', err);
-      setError((err as Error).message || 'Error al procesar el pago');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Función para manejar la selección de método de pago
   const handlePaymentMethodSelection = (method: 'qr' | 'link') => {
