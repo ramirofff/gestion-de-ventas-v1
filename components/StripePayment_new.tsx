@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { QRDisplay } from './QRDisplay';
 import { ClientAccount } from '../lib/client-accounts';
 import { supabase } from '../lib/supabaseClient';
@@ -41,6 +41,8 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [isPolling, setIsPolling] = useState(false);
+  const [pollingTimedOut, setPollingTimedOut] = useState(false);
+  const pollingStartRef = useRef<number | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('processing');
   const [isProcessed, setIsProcessed] = useState(false); // Control para evitar múltiples procesamientos
@@ -53,6 +55,8 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
       return;
     }
     console.log('🔄 Iniciando polling para sesión:', sessionId);
+    pollingStartRef.current = Date.now();
+    setPollingTimedOut(false);
     setIsPolling(true);
   }, [isPolling]);
 
@@ -65,6 +69,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
 
     setLoading(true);
     setError(null);
+    setPollingTimedOut(false);
 
     try {
       console.log('🔍 StripePayment: Iniciando creación de enlace...');
@@ -305,6 +310,14 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     if (isPolling && sessionId) {
       console.log('🔄 Iniciando polling para sesión:', sessionId);
       interval = setInterval(async () => {
+        if (pollingStartRef.current && Date.now() - pollingStartRef.current > 180000) {
+          console.warn('⏱️ Polling superó el tiempo máximo, deteniendo...');
+          setIsPolling(false);
+          setPollingTimedOut(true);
+          setPaymentStatus('pending');
+          if (interval) clearInterval(interval);
+          return;
+        }
         const paymentCompleted = await checkPaymentStatus(sessionId);
         if (paymentCompleted) {
           console.log('✅ Polling terminado - pago completado');
@@ -326,6 +339,16 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const handlePaymentMethodSelection = (method: 'qr' | 'link') => {
     setShowQR(true);
     setPaymentMode('processing');
+    setPollingTimedOut(false);
+    createPaymentLink();
+  };
+
+  const handleRetryPayment = () => {
+    setPaymentUrl(null);
+    setSessionId(null);
+    setIsPolling(false);
+    setIsProcessed(false);
+    setPollingTimedOut(false);
     createPaymentLink();
   };
 
@@ -569,6 +592,18 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                     <p className={`mt-3 text-sm ${getThemeClass({dark: 'text-gray-300', light: 'text-gray-600'})}`}>
                       📱 Escanea el código QR para pagar con tarjeta internacional
                     </p>
+                    {pollingTimedOut && (
+                      <div className={`mt-4 p-4 rounded-lg border ${getThemeClass({dark: 'border-yellow-500 text-yellow-300 bg-yellow-500/10', light: 'border-yellow-400 text-yellow-700 bg-yellow-50'})}`}>
+                        <p className="text-sm font-medium">El pago está tardando en confirmarse.</p>
+                        <p className="text-xs mt-1 opacity-80">Generamos un nuevo QR para que puedas reintentar.</p>
+                        <button
+                          onClick={handleRetryPayment}
+                          className={`mt-3 w-full py-2 px-4 rounded-md font-semibold transition-colors ${getThemeClass({dark: 'bg-yellow-500 text-black hover:bg-yellow-400', light: 'bg-yellow-500 text-white hover:bg-yellow-600'})}`}
+                        >
+                          🔄 Generar nuevo QR
+                        </button>
+                      </div>
+                    )}
                     {/* Estado del polling */}
                     {isPolling && (
                       <div className="flex items-center justify-center gap-2 mt-4">

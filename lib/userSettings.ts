@@ -33,7 +33,7 @@ class UserSettingsManager {
         .from('user_settings')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       
       if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
         console.warn('Error getting user settings (tabla podría no existir):', error);
@@ -181,7 +181,7 @@ class UserSettingsManager {
         .eq('session_id', sessionId)
         .eq('processed', false)
         .gt('expires_at', new Date().toISOString())
-        .single();
+        .maybeSingle();
       
       if (error && error.code !== 'PGRST116') {
         console.error('Error getting payment session:', error);

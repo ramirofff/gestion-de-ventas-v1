@@ -52,7 +52,7 @@ function HomeComponent({ preSelectedClient = null }: HomeProps) {
         .from('superusers')
         .select('id')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
       setIsSuperuser(!!data && !error);
     })();
   }, [user]);

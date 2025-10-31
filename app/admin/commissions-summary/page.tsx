@@ -67,7 +67,7 @@ export default function CommissionsSummaryPage() {
         .from('superusers')
         .select('id')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
       setIsSuperuser(!!data && !error);
     })();
   }, []);
@@ -91,7 +91,7 @@ export default function CommissionsSummaryPage() {
         .from('connected_accounts')
         .select('commission_rate')
         .eq('id', selectedUser.id)
-        .single();
+        .maybeSingle();
       if (!error && data) {
         setSelectedUser({ ...selectedUser, commission_rate: data.commission_rate });
       }

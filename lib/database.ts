@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { supabase, supabaseAdmin } from './supabaseClient';
 
 // Función helper para obtener el usuario autenticado de forma segura
 async function getAuthenticatedUser() {
@@ -42,7 +42,7 @@ export async function initializeDatabase() {
     console.log('Usuario autenticado:', user.email);
     
     // Verificar si existen las tablas
-    const { data: tables, error: tablesError } = await supabase
+    const { data: tables, error: tablesError } = await supabaseAdmin
       .from('information_schema.tables')
       .select('table_name')
       .eq('table_schema', 'public');
