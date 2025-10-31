@@ -186,14 +186,17 @@ export async function createPaymentWithCommission({
     const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://gestion-de-ventas-v1.vercel.app'}/payment/cancel`;
 
     if (connectedAccountId.startsWith('ar_virtual_')) {
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        payment_method_types: ['card', 'link', 'apple_pay', 'google_pay'],
-        payment_method_options: {
-          link: {
-            persistent_token: undefined, // Stripe maneja automáticamente las tarjetas guardadas
+      // Intentar primero con Apple Pay/Google Pay, si falla usar solo card y link
+      let session;
+      try {
+        session = await stripe.checkout.sessions.create({
+          mode: 'payment',
+          payment_method_types: ['card', 'link', 'apple_pay', 'google_pay'],
+          payment_method_options: {
+            link: {
+              persistent_token: undefined, // Stripe maneja automáticamente las tarjetas guardadas
+            },
           },
-        },
         line_items: [{
           price_data: {
             currency: currency,
@@ -217,13 +220,55 @@ export async function createPaymentWithCommission({
           user_id: userId || '',
         },
       });
+      } catch (err: any) {
+        // Si Apple Pay/Google Pay no están disponibles, usar solo card y link
+        if (err?.code === 'parameter_invalid_empty' || err?.message?.includes('payment_method_types') || err?.message?.includes('apple_pay') || err?.message?.includes('google_pay')) {
+          console.warn('[StripeConnect] Apple Pay/Google Pay no disponibles, usando solo card y link');
+          session = await stripe.checkout.sessions.create({
+            mode: 'payment',
+            payment_method_types: ['card', 'link'],
+            payment_method_options: {
+              link: {
+                persistent_token: undefined,
+              },
+            },
+            line_items: [{
+              price_data: {
+                currency: currency,
+                product_data: { 
+                  name: productName,
+                  description: `Cliente Argentina - Transfer manual requerido`
+                },
+                unit_amount: amount * 100,
+              },
+              quantity: 1,
+            }],
+            customer_email: customerEmail,
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+            locale: 'es',
+            allow_promotion_codes: false,
+            metadata: {
+              connected_account: connectedAccountId,
+              commission_rate: commissionRate.toString(),
+              cart_data: JSON.stringify(cartData),
+              user_id: userId || '',
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
       console.log('[StripeConnect] Checkout session livemode:', (session as any).livemode, 'id:', session.id);
       return session;
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card', 'link', 'apple_pay', 'google_pay'],
+    // Para cuentas reales de Stripe Connect (países soportados)
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        payment_method_types: ['card', 'link', 'apple_pay', 'google_pay'],
       payment_method_options: {
         link: {
           persistent_token: undefined, // Stripe maneja automáticamente las tarjetas guardadas
@@ -258,6 +303,51 @@ export async function createPaymentWithCommission({
         user_id: userId || '',
       },
     });
+    } catch (err: any) {
+      // Si Apple Pay/Google Pay no están disponibles, usar solo card y link
+      if (err?.code === 'parameter_invalid_empty' || err?.message?.includes('payment_method_types') || err?.message?.includes('apple_pay') || err?.message?.includes('google_pay')) {
+        console.warn('[StripeConnect] Apple Pay/Google Pay no disponibles, usando solo card y link');
+        session = await stripe.checkout.sessions.create({
+          mode: 'payment',
+          payment_method_types: ['card', 'link'],
+          payment_method_options: {
+            link: {
+              persistent_token: undefined,
+            },
+          },
+          line_items: [{
+            price_data: {
+              currency: currency,
+              product_data: { 
+                name: productName,
+                description: `Procesado por plataforma - Comisión: ${(commissionRate * 100).toFixed(1)}%`
+              },
+              unit_amount: amount * 100,
+            },
+            quantity: 1,
+          }],
+          payment_intent_data: {
+            application_fee_amount: commissionAmount * 100,
+            transfer_data: {
+              destination: connectedAccountId,
+            },
+          },
+          customer_email: customerEmail,
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          locale: 'es',
+          allow_promotion_codes: false,
+          metadata: {
+            connected_account: connectedAccountId,
+            commission_rate: commissionRate.toString(),
+            cart_data: JSON.stringify(cartData),
+            user_id: userId || '',
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
 
     console.log('[StripeConnect] Checkout session livemode:', (session as any).livemode, 'id:', session.id);
     return session;

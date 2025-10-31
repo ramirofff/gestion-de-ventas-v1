@@ -81,7 +81,9 @@ export async function POST(request: NextRequest) {
     // Usar el commission_rate real de la base
     const commissionRate = parseFloat(accountData?.commission_rate) || 0.05;
     // Crear sesión de pago con comisión (usar el email del usuario si no se proporciona customerEmail)
-    const session = await createPaymentWithCommission({
+    let session;
+    try {
+      session = await createPaymentWithCommission({
       connectedAccountId,
       amount: parseFloat(amount),
       commissionRate,
@@ -92,6 +94,23 @@ export async function POST(request: NextRequest) {
       cartData: cartData, // Pasar los datos del carrito
       userId: userId, // Pasar el userId a los metadatos
     });
+    } catch (stripeError: any) {
+      console.error('❌ Error de Stripe al crear sesión:', stripeError);
+      console.error('❌ Detalles del error:', {
+        type: stripeError?.type,
+        code: stripeError?.code,
+        message: stripeError?.message,
+        param: stripeError?.param,
+        decline_code: stripeError?.decline_code
+      });
+      return NextResponse.json(
+        { 
+          error: 'Error al crear sesión de pago',
+          details: stripeError?.message || 'Error desconocido de Stripe'
+        },
+        { status: 500 }
+      );
+    }
 
     console.log('✅ Sesión de pago creada:', session.id);
     console.log('🧪 session.livemode:', (session as any).livemode);
