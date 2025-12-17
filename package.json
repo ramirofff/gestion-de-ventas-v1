@@ -19,14 +19,14 @@
     "url": "https://github.com/ramirofff/gestion-de-ventas-v1"
   },
   "scripts": {
-  "dev": "next dev --turbopack",
-  "build": "next build",
-  "start": "next start",
-  "lint": "next lint",
-  "type-check": "tsc --noEmit",
-  "transfers": "node scripts/manual-transfers.js",
-  "clean": "sh ./scripts/clean.sh",
-  "clean:all": "sh ./scripts/clean.sh && rm -rf node_modules"
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "transfers": "node scripts/manual-transfers.js",
+    "clean": "sh ./scripts/clean.sh",
+    "clean:all": "sh ./scripts/clean.sh && rm -rf node_modules"
   },
   "dependencies": {
     "@shadcn/ui": "^0.0.4",
@@ -36,7 +36,7 @@
     "autoprefixer": "^10.4.21",
     "framer-motion": "^12.23.6",
     "lucide-react": "^0.525.0",
-    "next": "15.4.2",
+    "next": "15.4.10",
     "next-pwa": "^5.6.0",
     "postcss": "^8.5.6",
     "qrcode": "^1.5.4",
