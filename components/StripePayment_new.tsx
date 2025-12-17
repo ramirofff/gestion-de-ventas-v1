@@ -44,8 +44,9 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
   const pollingStartRef = useRef<number | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('processing');
+  const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('selection');
   const [isProcessed, setIsProcessed] = useState(false); // Control para evitar múltiples procesamientos
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'qr' | 'link' | null>(null);
   const { theme, getThemeClass } = useTheme();
 
   // Función para iniciar el polling de pagos (memoizada)
@@ -61,7 +62,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   }, [isPolling]);
 
   // Función para crear el enlace de pago (memoizada para evitar dependencias circulares)
-  const createPaymentLink = useCallback(async () => {
+  const createPaymentLink = useCallback(async (isQR: boolean) => {
     if (!currentUser) {
       setError('Debes iniciar sesión para realizar pagos');
       return;
@@ -72,7 +73,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     setPollingTimedOut(false);
 
     try {
-      console.log('🔍 StripePayment: Iniciando creación de enlace...');
+      console.log('🔍 StripePayment: Iniciando creación de enlace...', { isQR });
       
       const paymentData = {
         amount: amount,
@@ -112,7 +113,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
           customerEmail: paymentData.customer_email,
           commissionRate: 0.05,
           currency: paymentData.currency || 'usd',
-          isQRPayment: true, // Siempre QR
+          isQRPayment: isQR, // Usar el parámetro recibido
           cartData: items
         }),
       });
@@ -129,10 +130,11 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
       
       setPaymentUrl(data.payment_url);
       setSessionId(data.session_id);
+      setShowQR(isQR);
 
-      // Iniciar polling automáticamente para QR
-      if (data.session_id && !isPolling) {
-        console.log('🚀 Iniciando polling automáticamente después de crear enlace...');
+      // Iniciar polling automáticamente para QR, para LINK solo si el usuario abre la ventana
+      if (isQR && data.session_id && !isPolling) {
+        console.log('🚀 Iniciando polling automáticamente después de crear enlace QR...');
         setIsPolling(true);
         startPaymentPolling(data.session_id);
       }
@@ -145,17 +147,29 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     }
   }, [currentUser, amount, originalAmount, discountAmount, items, selectedClient, isPolling, startPaymentPolling]);
 
-  // Iniciar automáticamente el flujo con QR (sin opción de enlace directo) solo cuando haya usuario
+  // Removido el efecto automático - ahora el usuario debe seleccionar primero
+
+  // Efecto para abrir automáticamente la ventana de Stripe cuando se selecciona LINK
   useEffect(() => {
-    if (paymentMode === 'processing' && !paymentUrl && !loading && currentUser && !error) {
-      setShowQR(true);
+    if (paymentUrl && !showQR && selectedPaymentMethod === 'link' && !loading && sessionId) {
       // Pequeño delay para asegurar que el estado se actualizó
       const timeoutId = setTimeout(() => {
-        createPaymentLink();
-      }, 100);
+        const paymentWindow = window.open(paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+        
+        if (!paymentWindow) {
+          console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
+          alert('Por favor permite popups para abrir el pago');
+        }
+        
+        if (sessionId && !isPolling) {
+          console.log('🚀 Iniciando polling después de abrir Stripe...');
+          setIsPolling(true);
+          startPaymentPolling(sessionId);
+        }
+      }, 300);
       return () => clearTimeout(timeoutId);
     }
-  }, [paymentMode, paymentUrl, loading, currentUser, error, createPaymentLink]);
+  }, [paymentUrl, showQR, selectedPaymentMethod, loading, sessionId, isPolling, startPaymentPolling]);
 
   // Limpiar error de autenticación cuando el usuario esté disponible
   useEffect(() => {
@@ -337,10 +351,11 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
 
   // Función para manejar la selección de método de pago
   const handlePaymentMethodSelection = (method: 'qr' | 'link') => {
-    setShowQR(true);
+    setSelectedPaymentMethod(method);
     setPaymentMode('processing');
     setPollingTimedOut(false);
-    createPaymentLink();
+    setError(null);
+    createPaymentLink(method === 'qr');
   };
 
   const handleRetryPayment = () => {
@@ -349,7 +364,8 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     setIsPolling(false);
     setIsProcessed(false);
     setPollingTimedOut(false);
-    createPaymentLink();
+    const isQR = selectedPaymentMethod === 'qr' || showQR;
+    createPaymentLink(isQR);
   };
 
   const handlePaymentClick = () => {
@@ -364,9 +380,11 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
       if (sessionId && !isPolling) {
         console.log('🚀 Iniciando polling después de abrir Stripe...');
         setIsPolling(true);
+        startPaymentPolling(sessionId);
       }
     } else {
-      createPaymentLink();
+      const isQR = selectedPaymentMethod === 'qr';
+      createPaymentLink(isQR);
     }
   };
 
@@ -569,7 +587,9 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                       setPaymentUrl(null);
                       setSessionId(null);
                       setIsPolling(false);
+                      setIsProcessed(false);
                       setError(null);
+                      setSelectedPaymentMethod(null);
                     }}
                     className={`text-sm px-3 py-1 rounded transition-colors ${getThemeClass({
                       dark: 'bg-zinc-700 text-gray-300 hover:bg-zinc-600',
