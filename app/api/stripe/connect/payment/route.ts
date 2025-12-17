@@ -50,7 +50,18 @@ export async function POST(req: NextRequest) {
 
     // 3. Crear Checkout Session con Connect
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      payment_method_types: ['card', 'link', 'apple_pay', 'google_pay'],
+      payment_method_options: {
+        link: {
+          persistent_token: undefined,
+        },
+        apple_pay: {
+          // Habilitar Apple Pay explícitamente
+        },
+        google_pay: {
+          // Habilitar Google Pay explícitamente
+        },
+      },
       customer: customer.id,
       customer_update: {
         name: 'never',

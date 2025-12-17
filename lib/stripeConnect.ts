@@ -196,6 +196,12 @@ export async function createPaymentWithCommission({
             link: {
               persistent_token: undefined, // Stripe maneja automáticamente las tarjetas guardadas
             },
+            apple_pay: {
+              // Habilitar Apple Pay explícitamente
+            },
+            google_pay: {
+              // Habilitar Google Pay explícitamente
+            },
           },
         line_items: [{
           price_data: {
@@ -272,6 +278,12 @@ export async function createPaymentWithCommission({
       payment_method_options: {
         link: {
           persistent_token: undefined, // Stripe maneja automáticamente las tarjetas guardadas
+        },
+        apple_pay: {
+          // Habilitar Apple Pay explícitamente
+        },
+        google_pay: {
+          // Habilitar Google Pay explícitamente
         },
       },
       line_items: [{
