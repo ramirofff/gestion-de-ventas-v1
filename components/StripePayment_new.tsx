@@ -47,6 +47,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
   const [paymentMode, setPaymentMode] = useState<'selection' | 'processing'>('selection');
   const [isProcessed, setIsProcessed] = useState(false); // Control para evitar múltiples procesamientos
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'qr' | 'link' | null>(null);
+  const windowOpenedRef = useRef(false); // Referencia para evitar abrir la ventana dos veces
   const { theme, getThemeClass } = useTheme();
 
   // Función para iniciar el polling de pagos (memoizada)
@@ -151,20 +152,24 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
 
   // Efecto para abrir automáticamente la ventana de Stripe cuando se selecciona LINK
   useEffect(() => {
-    if (paymentUrl && !showQR && selectedPaymentMethod === 'link' && !loading && sessionId) {
+    if (paymentUrl && !showQR && selectedPaymentMethod === 'link' && !loading && sessionId && !windowOpenedRef.current) {
       // Pequeño delay para asegurar que el estado se actualizó
       const timeoutId = setTimeout(() => {
-        const paymentWindow = window.open(paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-        
-        if (!paymentWindow) {
-          console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
-          alert('Por favor permite popups para abrir el pago');
-        }
-        
-        if (sessionId && !isPolling) {
-          console.log('🚀 Iniciando polling después de abrir Stripe...');
-          setIsPolling(true);
-          startPaymentPolling(sessionId);
+        if (!windowOpenedRef.current) {
+          windowOpenedRef.current = true; // Marcar que ya se abrió
+          const paymentWindow = window.open(paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+          
+          if (!paymentWindow) {
+            console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
+            alert('Por favor permite popups para abrir el pago');
+            windowOpenedRef.current = false; // Resetear si falló
+          }
+          
+          if (sessionId && !isPolling) {
+            console.log('🚀 Iniciando polling después de abrir Stripe...');
+            setIsPolling(true);
+            startPaymentPolling(sessionId);
+          }
         }
       }, 300);
       return () => clearTimeout(timeoutId);
@@ -355,6 +360,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
     setPaymentMode('processing');
     setPollingTimedOut(false);
     setError(null);
+    windowOpenedRef.current = false; // Resetear la referencia cuando se selecciona un nuevo método
     createPaymentLink(method === 'qr');
   };
 
@@ -370,17 +376,24 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
 
   const handlePaymentClick = () => {
     if (paymentUrl) {
-      const paymentWindow = window.open(paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-      
-      if (!paymentWindow) {
-        console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
-        alert('Por favor permite popups para abrir el pago');
-      }
-      
-      if (sessionId && !isPolling) {
-        console.log('🚀 Iniciando polling después de abrir Stripe...');
-        setIsPolling(true);
-        startPaymentPolling(sessionId);
+      // Solo abrir si no se ha abierto ya automáticamente
+      if (!windowOpenedRef.current) {
+        windowOpenedRef.current = true; // Marcar que ya se abrió
+        const paymentWindow = window.open(paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+        
+        if (!paymentWindow) {
+          console.warn('⚠️ No se pudo abrir la ventana de pago - posible bloqueo de popups');
+          alert('Por favor permite popups para abrir el pago');
+          windowOpenedRef.current = false; // Resetear si falló
+        }
+        
+        if (sessionId && !isPolling) {
+          console.log('🚀 Iniciando polling después de abrir Stripe...');
+          setIsPolling(true);
+          startPaymentPolling(sessionId);
+        }
+      } else {
+        console.log('⚠️ La ventana ya fue abierta automáticamente');
       }
     } else {
       const isQR = selectedPaymentMethod === 'qr';
@@ -590,6 +603,7 @@ export function StripePayment({ amount, originalAmount, discountAmount, items, o
                       setIsProcessed(false);
                       setError(null);
                       setSelectedPaymentMethod(null);
+                      windowOpenedRef.current = false; // Resetear la referencia al cambiar método
                     }}
                     className={`text-sm px-3 py-1 rounded transition-colors ${getThemeClass({
                       dark: 'bg-zinc-700 text-gray-300 hover:bg-zinc-600',
